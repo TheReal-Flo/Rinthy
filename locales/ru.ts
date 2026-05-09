@@ -192,7 +192,5 @@ export const ru = {
   update_later: 'Позже',
   update_whats_new: 'Что нового',
   update_outdated: 'Версия устарела',
-  update_view_release: 'Открыть релиз',
-  update_installing: 'Установка...',
-  update_install_failed: 'Не удалось открыть Android-установщик. Разреши установку из этого источника и попробуй снова.'
+  update_view_release: 'Открыть релиз'
 } as const;

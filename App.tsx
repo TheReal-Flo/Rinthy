@@ -3,8 +3,7 @@
 declare const __APP_VERSION__: string;
 import { HashRouter, Routes, Route, useNavigate, useParams, Outlet, useLocation } from 'react-router-dom';
 import { App as CapApp } from '@capacitor/app';
-import { Capacitor, registerPlugin } from '@capacitor/core';
-import { Loader2, LogOut, ArrowLeft, Save, ExternalLink, BarChart2, ShieldCheck, Key, ChevronRight, Download, Activity, BookOpen, FileText, Monitor, Server, Edit3, Globe, Wallet, DollarSign, Archive, Lock, EyeOff, Info, Heart, Clock, Users, Trash2, Moon, Sun, Smartphone, UserPlus, Search, X, Check, ChevronDown, Bell, AlertTriangle, Image as ImageIcon, Upload, Package, Calendar, File as FileIcon, Layers, MousePointerClick, CheckCheck, RefreshCw, MoreVertical } from 'lucide-react';
+import { Loader2, LogOut, ArrowLeft, Save, ExternalLink, BarChart2, ShieldCheck, Key, ChevronRight, Download, Activity, BookOpen, FileText, Monitor, Server, Edit3, Globe, Wallet, DollarSign, Archive, Lock, EyeOff, Info, Heart, Clock, Users, Trash2, Moon, Sun, Smartphone, UserPlus, Search, X, Check, ChevronDown, Bell, AlertTriangle, Image as ImageIcon, Upload, Package, Calendar, File as FileIcon, Layers, MousePointerClick, CheckCheck, RefreshCw, MoreVertical, Star } from 'lucide-react';
 import { fetchCurrentUser, fetchUserProjects, fetchProject, updateProject, fetchProjectMembers, deleteTeamMember, updateTeamMember, searchUser, addTeamMember, modifyUser, fetchNotifications, deleteNotification, markNotificationRead, markMultipleNotificationsRead, changeProjectIcon, deleteProjectIcon, addGalleryImage, deleteGalleryImage, fetchProjectDependencies, fetchProjectVersions, fetchGameVersionTags, fetchLoaderTags, modifyVersion, deleteVersionById, fetchUserPayoutHistoryWithStatus, fetchUserByIdWithStatus, fetchPayoutBalanceV3WithStatus, joinTeam, transferTeamOwnership } from './services/modrinthService';
 import { AuthState, ModrinthUser, ModrinthProject, NavTab, ProjectMember, SettingsContextType, ThemeMode, Language, UserSearchResult, ModifyUserPayload, ModrinthNotification, ProjectDependency, ModrinthVersion, ModrinthPayoutHistory } from './types';
 import ProjectCard from './components/ProjectCard';
@@ -51,12 +50,6 @@ const BackButtonHandler: React.FC = () => {
 // --- App Version ---
 const APP_VERSION = typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : '1.0.0';
 const GITHUB_REPO = 'imsawiq/Rinthy';
-
-interface UpdateInstallerPlugin {
-  downloadAndInstall(options: { url: string; fileName?: string; title?: string }): Promise<void>;
-}
-
-const UpdateInstaller = registerPlugin<UpdateInstallerPlugin>('UpdateInstaller');
 
 interface GitHubRelease {
   tag_name: string;
@@ -143,26 +136,6 @@ const checkForUpdates = async (): Promise<GitHubRelease | null> => {
 const findApkAsset = (release: GitHubRelease) =>
   release.assets.find(a => a.name.toLowerCase().endsWith('.apk'));
 
-const installReleaseUpdate = async (release: GitHubRelease): Promise<void> => {
-  const apkAsset = findApkAsset(release);
-
-  if (!apkAsset) {
-    window.open(release.html_url, '_blank', 'noopener,noreferrer');
-    return;
-  }
-
-  if (Capacitor.isNativePlatform()) {
-    await UpdateInstaller.downloadAndInstall({
-      url: apkAsset.browser_download_url,
-      fileName: apkAsset.name,
-      title: `Rinthy ${release.tag_name}`
-    });
-    return;
-  }
-
-  window.open(apkAsset.browser_download_url, '_blank', 'noopener,noreferrer');
-};
-
 const compareVersions = (a: string, b: string): number => {
   const pa = a.split('.').map(Number);
   const pb = b.split('.').map(Number);
@@ -210,6 +183,7 @@ type NotificationGroup = {
 
 const MODRINTH_ID_RE = /\b[A-Za-z0-9]{8}\b/g;
 const PROJECT_SORT_KEY = 'project_sort_mode';
+const FAVORITE_PROJECTS_KEY_PREFIX = 'favorite_projects';
 
 const PROJECT_SORT_OPTIONS: ProjectSortMode[] = ['popularity', 'updated', 'title'];
 
@@ -569,18 +543,9 @@ const TokenHelpModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
 // --- Update Modal ---
 const UpdateModal: React.FC<{ release: GitHubRelease; onClose: () => void }> = ({ release, onClose }) => {
   const { t, theme } = useSettings();
-  const [isInstalling, setIsInstalling] = useState(false);
   const version = release.tag_name.replace(/^v/, '');
-
-  const handleInstall = async () => {
-    try {
-      setIsInstalling(true);
-      await installReleaseUpdate(release);
-    } catch (e) {
-      alert(e instanceof Error ? e.message : t('update_install_failed'));
-      setIsInstalling(false);
-    }
-  };
+  const apkAsset = findApkAsset(release);
+  const downloadUrl = apkAsset?.browser_download_url || release.html_url;
 
   const overlayClass = theme === 'light' ? 'bg-black/40' : 'bg-black/60';
   const modalClass = theme === 'light'
@@ -625,15 +590,14 @@ const UpdateModal: React.FC<{ release: GitHubRelease; onClose: () => void }> = (
           >
             {t('update_later')}
           </button>
-          <button
-            type="button"
-            onClick={handleInstall}
-            disabled={isInstalling}
+          <a
+            href={downloadUrl}
+            target="_blank"
+            rel="noreferrer"
             className="flex-1 py-3 rounded-2xl font-bold text-sm bg-modrinth-green text-white text-center flex items-center justify-center gap-2 active:scale-[0.98] transition-transform disabled:opacity-70"
           >
-            {isInstalling ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
-            {isInstalling ? t('update_installing') : t('update_download')}
-          </button>
+            <Download size={16} /> {t('update_download')}
+          </a>
         </div>
       </div>
     </div>
@@ -1020,6 +984,22 @@ const NotificationsModal: React.FC<{ isOpen: boolean; onClose: () => void; user:
     );
 };
 
+const getFavoriteProjectsKey = (userId: string) => `${FAVORITE_PROJECTS_KEY_PREFIX}_${userId}`;
+
+const readFavoriteProjectIds = (userId: string) => {
+  try {
+    const raw = localStorage.getItem(getFavoriteProjectsKey(userId));
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === 'string') : [];
+  } catch {
+    return [];
+  }
+};
+
+const saveFavoriteProjectIds = (userId: string, ids: string[]) => {
+  localStorage.setItem(getFavoriteProjectsKey(userId), JSON.stringify(ids));
+};
+
 const Dashboard: React.FC<{ user: ModrinthUser; token: string }> = ({ user, token }) => {
   const [projects, setProjects] = useState<ModrinthProject[]>([]);
   const [sortMode, setSortMode] = useState<ProjectSortMode>(() => getStoredProjectSortMode());
@@ -1027,11 +1007,28 @@ const Dashboard: React.FC<{ user: ModrinthUser; token: string }> = ({ user, toke
   const [loading, setLoading] = useState(true);
   const [showNotifs, setShowNotifs] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [favoriteProjectIds, setFavoriteProjectIds] = useState<string[]>(() => readFavoriteProjectIds(user.id));
   const sortMenuRef = useRef<HTMLDivElement | null>(null);
   const navigate = useNavigate();
   const { t, theme, language } = useSettings();
 
-  const sortedProjects = useMemo(() => sortProjectsByMode(projects, sortMode), [projects, sortMode]);
+  useEffect(() => {
+    setFavoriteProjectIds(readFavoriteProjectIds(user.id));
+  }, [user.id]);
+
+  const favoriteProjectIdSet = useMemo(() => new Set(favoriteProjectIds), [favoriteProjectIds]);
+  const favoriteCount = useMemo(
+    () => projects.filter((project) => favoriteProjectIdSet.has(project.id)).length,
+    [projects, favoriteProjectIdSet]
+  );
+
+  const sortedProjects = useMemo(() => {
+    const sorted = sortProjectsByMode(projects, sortMode);
+    return sorted
+      .map((project, index) => ({ project, index, favorite: favoriteProjectIdSet.has(project.id) }))
+      .sort((a, b) => Number(b.favorite) - Number(a.favorite) || a.index - b.index)
+      .map(({ project }) => project);
+  }, [projects, sortMode, favoriteProjectIdSet]);
 
   const loadProjects = useCallback(() => {
     let mounted = true;
@@ -1071,6 +1068,16 @@ const Dashboard: React.FC<{ user: ModrinthUser; token: string }> = ({ user, toke
     setShowSortMenu(false);
     localStorage.setItem(PROJECT_SORT_KEY, mode);
   };
+
+  const handleToggleFavoriteProject = useCallback((projectId: string) => {
+    setFavoriteProjectIds((prev) => {
+      const next = prev.includes(projectId)
+        ? prev.filter((id) => id !== projectId)
+        : [projectId, ...prev];
+      saveFavoriteProjectIds(user.id, next);
+      return next;
+    });
+  }, [user.id]);
 
   useEffect(() => {
     if (!showSortMenu) return;
@@ -1128,8 +1135,14 @@ const Dashboard: React.FC<{ user: ModrinthUser; token: string }> = ({ user, toke
       {loading ? <div className="flex justify-center pt-40"><Loader2 className="animate-spin text-modrinth-green w-10 h-10" /></div> : (
         <div className="space-y-1 pb-20">
           <div className="mb-1 flex items-center justify-between px-1" ref={sortMenuRef}>
-            <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-modrinth-muted/75">
-              {formatProjectsCountLabel(sortedProjects.length, language, t)}
+            <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.14em] text-modrinth-muted/75">
+              <span>{formatProjectsCountLabel(sortedProjects.length, language, t)}</span>
+              {favoriteCount > 0 && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-yellow-400/10 px-2 py-1 text-yellow-400 tracking-normal">
+                  <Star size={11} className="fill-current" />
+                  {favoriteCount}
+                </span>
+              )}
             </div>
             <div className="relative">
               <button
@@ -1184,7 +1197,12 @@ const Dashboard: React.FC<{ user: ModrinthUser; token: string }> = ({ user, toke
           </div>
           {sortedProjects.map((p, idx) => (
              <div key={p.id} style={{ animationDelay: `${idx * 0.05}s` }} className="animate-fade-in-up">
-                <ProjectCard project={p} onClick={(id) => navigate(`/project/${id}`)} />
+                <ProjectCard
+                  project={p}
+                  onClick={(id) => navigate(`/project/${id}`)}
+                  isFavorite={favoriteProjectIdSet.has(p.id)}
+                  onToggleFavorite={handleToggleFavoriteProject}
+                />
              </div>
           ))}
           {sortedProjects.length === 0 && (
@@ -3276,7 +3294,6 @@ const SettingsPage: React.FC<{ user: ModrinthUser; onLogout: () => void; token: 
   const [currUser, setCurrUser] = useState(user);
   const [colorInput, setColorInput] = useState(accentColor);
   const [settingsRelease, setSettingsRelease] = useState<GitHubRelease | null>(updateInfo ?? null);
-  const [isInstallingUpdate, setIsInstallingUpdate] = useState(false);
   const latestVersion = settingsRelease?.tag_name.replace(/^v/, '') || null;
   const isOutdated = latestVersion ? compareVersions(latestVersion, APP_VERSION) > 0 : false;
 
@@ -3290,16 +3307,6 @@ const SettingsPage: React.FC<{ user: ModrinthUser; onLogout: () => void; token: 
       if (release) setSettingsRelease(release);
     });
   }, [settingsRelease]);
-
-  const handleInstallUpdate = async (release: GitHubRelease) => {
-    try {
-      setIsInstallingUpdate(true);
-      await installReleaseUpdate(release);
-    } catch (e) {
-      alert(e instanceof Error ? e.message : t('update_install_failed'));
-      setIsInstallingUpdate(false);
-    }
-  };
 
   return (
     <div className="px-4 pb-20 animate-fade-in">
@@ -3329,15 +3336,14 @@ const SettingsPage: React.FC<{ user: ModrinthUser; onLogout: () => void; token: 
               <div className="text-xs text-modrinth-muted mb-3">
                 {t('update_current')}: {APP_VERSION} · {t('update_new_version')}: {latestVersion}
               </div>
-              <button
-                type="button"
-                onClick={() => handleInstallUpdate(settingsRelease)}
-                disabled={isInstallingUpdate}
+              <a
+                href={findApkAsset(settingsRelease)?.browser_download_url || settingsRelease.html_url}
+                target="_blank"
+                rel="noreferrer"
                 className="inline-flex items-center gap-2 text-xs font-bold text-modrinth-green bg-modrinth-bg px-3 py-1.5 rounded-lg"
               >
-                {isInstallingUpdate ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />}
-                {isInstallingUpdate ? t('update_installing') : t('update_download')}
-              </button>
+                <ExternalLink size={12} /> {t('update_view_release')}
+              </a>
             </div>
           </div>
         </div>

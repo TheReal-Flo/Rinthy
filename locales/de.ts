@@ -192,7 +192,5 @@ export const de = {
   update_later: 'Später',
   update_whats_new: 'Was ist neu',
   update_outdated: 'Veraltete Version',
-  update_view_release: 'Release ansehen',
-  update_installing: 'Wird installiert...',
-  update_install_failed: 'Der Android-Installer konnte nicht gestartet werden. Erlaube App-Installationen aus dieser Quelle und versuche es erneut.'
+  update_view_release: 'Release ansehen'
 } as const;

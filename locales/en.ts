@@ -192,7 +192,5 @@ export const en = {
   update_later: 'Later',
   update_whats_new: 'What\'s new',
   update_outdated: 'Outdated version',
-  update_view_release: 'View release',
-  update_installing: 'Installing...',
-  update_install_failed: 'Could not start the Android installer. Allow app installs from this source and try again.'
+  update_view_release: 'View release'
 } as const;
