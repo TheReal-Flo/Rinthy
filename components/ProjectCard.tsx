@@ -7,9 +7,10 @@ interface ProjectCardProps {
   onClick: (id: string) => void;
   isFavorite?: boolean;
   onToggleFavorite?: (id: string) => void;
+  showFavoriteAction?: boolean;
 }
 
-const ProjectCard: React.FC<ProjectCardProps> = ({ project, onClick, isFavorite = false, onToggleFavorite }) => {
+const ProjectCard: React.FC<ProjectCardProps> = ({ project, onClick, isFavorite = false, onToggleFavorite, showFavoriteAction = true }) => {
   const summary = (project.description || '').trim() || 'No summary available';
 
   const getStatusInfo = (status: string) => {
@@ -102,18 +103,20 @@ const ProjectCard: React.FC<ProjectCardProps> = ({ project, onClick, isFavorite 
           </div>
         </div>
 
-        <button
-          type="button"
-          onClick={handleToggleFavorite}
-          className={`mr-2 p-2.5 rounded-full transition-all active:scale-95 ${
-            isFavorite
-              ? 'text-orange-400'
-              : 'text-zinc-400 hover:text-yellow-400 hover:bg-yellow-400/10'
-          }`}
-          aria-label={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
-        >
-          <Star size={18} strokeWidth={2.6} className={isFavorite ? 'fill-current' : ''} />
-        </button>
+        {showFavoriteAction && (
+          <button
+            type="button"
+            onClick={handleToggleFavorite}
+            className={`mr-2 p-2.5 rounded-full transition-all active:scale-95 ${
+              isFavorite
+                ? 'text-orange-400'
+                : 'text-zinc-400 hover:text-yellow-400 hover:bg-yellow-400/10'
+            }`}
+            aria-label={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+          >
+            <Star size={18} strokeWidth={2.6} className={isFavorite ? 'fill-current' : ''} />
+          </button>
+        )}
         <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[10px] font-bold uppercase tracking-wider backdrop-blur-sm ${status.color}`}>
           <StatusIcon size={10} />
           {status.label}

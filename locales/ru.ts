@@ -172,6 +172,7 @@ export const ru = {
   last_7_days: '7 дней',
   weekly_downloads: 'Загрузок за неделю',
   weekly_follows: 'Подписок за неделю',
+  weekly_revenue: 'Заработано за неделю',
   active_label: 'Активные',
   active_projects_week: 'Проектов с ростом',
   tracked_label: 'Трекинг',
@@ -192,5 +193,7 @@ export const ru = {
   update_later: 'Позже',
   update_whats_new: 'Что нового',
   update_outdated: 'Версия устарела',
-  update_view_release: 'Открыть релиз'
+  update_view_release: 'Открыть релиз',
+  favorite_projects: 'Избранные проекты',
+  favorite_projects_desc: 'Показывать кнопку избранного в карточках проектов и закреплять избранные сверху.'
 } as const;

@@ -1,4 +1,4 @@
-import { ModrinthProject, ModrinthUser, ModrinthPayoutHistory, ProjectMember, UserSearchResult, ModifyUserPayload, ModrinthNotification, ProjectDependency, ModrinthVersion } from '../types';
+import { ModrinthProject, ModrinthUser, ModrinthPayoutHistory, ProjectMember, UserSearchResult, ModifyUserPayload, ModrinthNotification, ProjectDependency, ModrinthVersion, ModrinthOrganization } from '../types';
 
 const BASE_URL = 'https://api.modrinth.com/v2';
 const BASE_URL_V3 = 'https://api.modrinth.com/v3';
@@ -424,6 +424,15 @@ export const fetchProject = async (projectId: string, token: string): Promise<Mo
     headers: getHeaders(token)
   });
   if (!response.ok) throw new Error('Failed to fetch project');
+  return response.json();
+};
+
+export const fetchOrganization = async (organizationIdOrSlug: string, token: string): Promise<ModrinthOrganization> => {
+  const response = await fetch(`${BASE_URL_V3}/organization/${organizationIdOrSlug}`, {
+    headers: getHeaders(token)
+  });
+
+  if (!response.ok) throw new Error('Failed to fetch organization');
   return response.json();
 };
 

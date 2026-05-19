@@ -181,6 +181,18 @@ export const fr = {
   total_label: "Total",
   downloads_label: "Téléchargements",
   follows_label: "Abonnés",
+  weekly_summary: "Résumé hebdomadaire",
+  last_7_days: "7 jours",
+  weekly_downloads: "Téléchargements cette semaine",
+  weekly_follows: "Abonnés cette semaine",
+  weekly_revenue: "Gagné cette semaine",
+  active_label: "Actifs",
+  active_projects_week: "Projets en progression",
+  tracked_label: "Suivi",
+  days_tracked: "Jours de données",
+  weekly_top_project: "Meilleur projet de la semaine",
+  weekly_baseline_note:
+    "Les résultats hebdomadaires sont calculés à partir d'instantanés analytiques locaux. Après la première visite des analytics, l'application crée une référence ; les écarts exacts sur 7 jours apparaissent lorsque suffisamment de données ont été collectées.",
   avg_label: "Moy.",
   downloads_per_project: "Téléchargements / projet",
   no_top_projects: "Aucune donnée sur les meilleurs projets",
@@ -196,4 +208,7 @@ export const fr = {
   update_whats_new: "Quoi de neuf",
   update_outdated: "Version obsolète",
   update_view_release: "Voir la version",
+  favorite_projects: "Projets favoris",
+  favorite_projects_desc:
+    "Afficher le bouton favori sur les cartes de projet et garder les favoris en haut.",
 } as const;

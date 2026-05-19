@@ -128,6 +128,16 @@ export interface ModrinthProject {
   gallery?: GalleryImage[];
 }
 
+export interface ModrinthOrganization {
+  id: string;
+  slug: string;
+  name: string;
+  team_id: string;
+  description?: string;
+  icon_url?: string | null;
+  color?: number | null;
+}
+
 export interface ProjectMember {
   user: ModrinthUser;
   team_id: string;
@@ -176,4 +186,6 @@ export interface SettingsContextType {
   t: (key: string) => string;
   accentColor: string;
   setAccentColor: (color: string) => void;
+  showFavoriteProjects: boolean;
+  setShowFavoriteProjects: (enabled: boolean) => void;
 }

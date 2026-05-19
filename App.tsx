@@ -4,8 +4,8 @@ declare const __APP_VERSION__: string;
 import { HashRouter, Routes, Route, useNavigate, useParams, Outlet, useLocation } from 'react-router-dom';
 import { App as CapApp } from '@capacitor/app';
 import { Loader2, LogOut, ArrowLeft, Save, ExternalLink, BarChart2, ShieldCheck, Key, ChevronRight, Download, Activity, BookOpen, FileText, Monitor, Server, Edit3, Globe, Wallet, DollarSign, Archive, Lock, EyeOff, Info, Heart, Clock, Users, Trash2, Moon, Sun, Smartphone, UserPlus, Search, X, Check, ChevronDown, Bell, AlertTriangle, Image as ImageIcon, Upload, Package, Calendar, File as FileIcon, Layers, MousePointerClick, CheckCheck, RefreshCw, MoreVertical, Star } from 'lucide-react';
-import { fetchCurrentUser, fetchUserProjects, fetchProject, updateProject, fetchProjectMembers, deleteTeamMember, updateTeamMember, searchUser, addTeamMember, modifyUser, fetchNotifications, deleteNotification, markNotificationRead, markMultipleNotificationsRead, changeProjectIcon, deleteProjectIcon, addGalleryImage, deleteGalleryImage, fetchProjectDependencies, fetchProjectVersions, fetchGameVersionTags, fetchLoaderTags, modifyVersion, deleteVersionById, fetchUserPayoutHistoryWithStatus, fetchUserByIdWithStatus, fetchPayoutBalanceV3WithStatus, joinTeam, transferTeamOwnership } from './services/modrinthService';
-import { AuthState, ModrinthUser, ModrinthProject, NavTab, ProjectMember, SettingsContextType, ThemeMode, Language, UserSearchResult, ModifyUserPayload, ModrinthNotification, ProjectDependency, ModrinthVersion, ModrinthPayoutHistory } from './types';
+import { fetchCurrentUser, fetchUserProjects, fetchProject, fetchOrganization, updateProject, fetchProjectMembers, deleteTeamMember, updateTeamMember, searchUser, addTeamMember, modifyUser, fetchNotifications, deleteNotification, markNotificationRead, markMultipleNotificationsRead, changeProjectIcon, deleteProjectIcon, addGalleryImage, deleteGalleryImage, fetchProjectDependencies, fetchProjectVersions, fetchGameVersionTags, fetchLoaderTags, modifyVersion, deleteVersionById, fetchUserPayoutHistoryWithStatus, fetchUserByIdWithStatus, fetchPayoutBalanceV3WithStatus, joinTeam, transferTeamOwnership } from './services/modrinthService';
+import { AuthState, ModrinthUser, ModrinthProject, ModrinthOrganization, NavTab, ProjectMember, SettingsContextType, ThemeMode, Language, UserSearchResult, ModifyUserPayload, ModrinthNotification, ProjectDependency, ModrinthVersion, ModrinthPayoutHistory } from './types';
 import ProjectCard from './components/ProjectCard';
 import BottomNav from './components/BottomNav';
 import { DEFAULT_LANGUAGE, isSupportedLanguage, LANGUAGE_OPTIONS, TRANSLATIONS } from './locales';
@@ -163,12 +163,15 @@ type ResolvedNotification = ModrinthNotification & {
   projectKey: string;
   projectTitle: string | null;
   projectIconUrl: string | null;
+  entityKind: 'project' | 'organization' | 'notification';
+  entityTitle: string | null;
+  entityIconUrl: string | null;
   versionLabel: string | null;
 };
 
 type NotificationEntityRef = {
   id: string;
-  kind: 'project' | 'version' | 'unknown';
+  kind: 'project' | 'version' | 'organization' | 'unknown';
   projectSlug?: string;
 };
 
@@ -178,12 +181,18 @@ type NotificationGroup = {
   key: string;
   projectTitle: string | null;
   projectIconUrl: string | null;
+  entityKind: 'project' | 'organization' | 'notification';
+  entityTitle: string | null;
+  entityIconUrl: string | null;
   items: ResolvedNotification[];
 };
 
 const MODRINTH_ID_RE = /\b[A-Za-z0-9]{8}\b/g;
 const PROJECT_SORT_KEY = 'project_sort_mode';
 const FAVORITE_PROJECTS_KEY_PREFIX = 'favorite_projects';
+const SHOW_FAVORITE_PROJECTS_KEY = 'show_favorite_projects';
+const DAY_MS = 24 * 60 * 60 * 1000;
+const WEEK_MS = 7 * DAY_MS;
 
 const PROJECT_SORT_OPTIONS: ProjectSortMode[] = ['popularity', 'updated', 'title'];
 
@@ -253,8 +262,10 @@ const getNotificationEntityRefs = (notif: ModrinthNotification): NotificationEnt
   const link = notif.link || '';
   const projectMatch = link.match(/\/project\/([^/?#]+)/);
   const versionMatch = link.match(/\/version\/([^/?#]+)/);
+  const organizationMatch = link.match(/\/organizations?\/([^/?#]+)/);
   const projectSlug = projectMatch?.[1];
   if (projectSlug) refs.set(projectSlug, { id: projectSlug, kind: 'project' });
+  if (organizationMatch) refs.set(organizationMatch[1], { id: organizationMatch[1], kind: 'organization' });
   if (versionMatch) {
     refs.set(versionMatch[1], { id: versionMatch[1], kind: 'version', projectSlug });
   }
@@ -275,6 +286,7 @@ const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ children })
     return stored && isSupportedLanguage(stored) ? stored : DEFAULT_LANGUAGE;
   });
   const [accentColor, setAccentColorState] = useState<string>(() => localStorage.getItem('accentColor') || '#30B27C');
+  const [showFavoriteProjects, setShowFavoriteProjectsState] = useState<boolean>(() => localStorage.getItem(SHOW_FAVORITE_PROJECTS_KEY) !== 'false');
 
   const setTheme = (newTheme: ThemeMode) => {
     setThemeState(newTheme);
@@ -293,6 +305,11 @@ const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ children })
     document.documentElement.style.setProperty('--accent-color', color);
   };
 
+  const setShowFavoriteProjects = (enabled: boolean) => {
+    setShowFavoriteProjectsState(enabled);
+    localStorage.setItem(SHOW_FAVORITE_PROJECTS_KEY, enabled ? 'true' : 'false');
+  };
+
   useEffect(() => {
     document.documentElement.className = `theme-${theme}`;
     document.documentElement.style.setProperty('--accent-color', accentColor);
@@ -303,7 +320,7 @@ const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ children })
   };
 
   return (
-    <SettingsContext.Provider value={{ theme, setTheme, language, setLanguage, t, accentColor, setAccentColor }}>
+    <SettingsContext.Provider value={{ theme, setTheme, language, setLanguage, t, accentColor, setAccentColor, showFavoriteProjects, setShowFavoriteProjects }}>
       {children}
     </SettingsContext.Provider>
   );
@@ -638,6 +655,7 @@ const NotificationsModal: React.FC<{ isOpen: boolean; onClose: () => void; user:
 
             const replacements: Record<string, string> = {};
             const projectCache = new Map<string, ModrinthProject>();
+            const organizationCache = new Map<string, ModrinthOrganization>();
             const versionReplacements: Record<string, string> = {};
             const entityRefs = Array.from(
                 new Map(
@@ -667,6 +685,20 @@ const NotificationsModal: React.FC<{ isOpen: boolean; onClose: () => void; user:
                     return;
                 }
 
+                if (kind === 'organization') {
+                    try {
+                        const organization = await fetchOrganization(id, token);
+                        organizationCache.set(organization.id, organization);
+                        organizationCache.set(organization.slug, organization);
+                        replacements[id] = organization.name || id;
+                        replacements[organization.id] = organization.name || organization.id;
+                        replacements[organization.slug] = organization.name || organization.slug;
+                    } catch {
+                        // Leave unresolved organization IDs untouched.
+                    }
+                    return;
+                }
+
                 if (kind === 'project' || kind === 'unknown') {
                     try {
                         const project = await fetchProject(id, token);
@@ -676,7 +708,18 @@ const NotificationsModal: React.FC<{ isOpen: boolean; onClose: () => void; user:
                         replacements[project.id] = project.title || project.id;
                         replacements[project.slug] = project.title || project.slug;
                     } catch {
-                        // Leave unknown IDs untouched.
+                        if (kind !== 'unknown') return;
+
+                        try {
+                            const organization = await fetchOrganization(id, token);
+                            organizationCache.set(organization.id, organization);
+                            organizationCache.set(organization.slug, organization);
+                            replacements[id] = organization.name || id;
+                            replacements[organization.id] = organization.name || organization.id;
+                            replacements[organization.slug] = organization.name || organization.slug;
+                        } catch {
+                            // Leave unknown IDs untouched.
+                        }
                     }
                 }
             }));
@@ -687,17 +730,26 @@ const NotificationsModal: React.FC<{ isOpen: boolean; onClose: () => void; user:
                 notifs.map((notif) => {
                     const link = notif.link || '';
                     const projectSlug = link.match(/\/project\/([^/?#]+)/)?.[1] || null;
+                    const organizationSlug = link.match(/\/organizations?\/([^/?#]+)/)?.[1] || null;
                     const projectIdFromText = (notif.title + ' ' + notif.text).match(MODRINTH_ID_RE)?.find((id) => projectCache.has(id)) || null;
+                    const organizationIdFromText = (notif.title + ' ' + notif.text).match(MODRINTH_ID_RE)?.find((id) => organizationCache.has(id)) || null;
                     const project = (projectSlug && projectCache.get(projectSlug)) || (projectIdFromText && projectCache.get(projectIdFromText)) || null;
+                    const organization = (organizationSlug && organizationCache.get(organizationSlug)) || (organizationIdFromText && organizationCache.get(organizationIdFromText)) || null;
                     const versionId = link.match(/\/version\/([^/?#]+)/)?.[1] || (notif.text.match(MODRINTH_ID_RE)?.find((id) => versionReplacements[id]) ?? null);
+                    const entityKind = organization ? 'organization' : project ? 'project' : 'notification';
+                    const entityTitle = organization?.name || project?.title || null;
+                    const entityIconUrl = organization?.icon_url || project?.icon_url || null;
 
                     return {
                         ...notif,
                         displayTitle: replaceResolvedIds(notif.title, replacements),
                         displayText: replaceResolvedIds(notif.text, replacements),
-                        projectKey: project?.id || project?.slug || notif.id,
+                        projectKey: organization?.id || organization?.slug || project?.id || project?.slug || notif.id,
                         projectTitle: project?.title || null,
                         projectIconUrl: project?.icon_url || null,
+                        entityKind,
+                        entityTitle,
+                        entityIconUrl,
                         versionLabel: versionId ? versionReplacements[versionId] || null : null
                     };
                 })
@@ -720,6 +772,9 @@ const NotificationsModal: React.FC<{ isOpen: boolean; onClose: () => void; user:
                 existing.items.push(notif);
                 if (!existing.projectTitle && notif.projectTitle) existing.projectTitle = notif.projectTitle;
                 if (!existing.projectIconUrl && notif.projectIconUrl) existing.projectIconUrl = notif.projectIconUrl;
+                if (existing.entityKind === 'notification' && notif.entityKind !== 'notification') existing.entityKind = notif.entityKind;
+                if (!existing.entityTitle && notif.entityTitle) existing.entityTitle = notif.entityTitle;
+                if (!existing.entityIconUrl && notif.entityIconUrl) existing.entityIconUrl = notif.entityIconUrl;
                 return;
             }
 
@@ -727,6 +782,9 @@ const NotificationsModal: React.FC<{ isOpen: boolean; onClose: () => void; user:
                 key: notif.projectKey,
                 projectTitle: notif.projectTitle,
                 projectIconUrl: notif.projectIconUrl,
+                entityKind: notif.entityKind,
+                entityTitle: notif.entityTitle,
+                entityIconUrl: notif.entityIconUrl,
                 items: [notif]
             });
         });
@@ -880,8 +938,8 @@ const NotificationsModal: React.FC<{ isOpen: boolean; onClose: () => void; user:
                         return (
                             <div key={group.key} className={`${cardClass} p-4 rounded-3xl relative overflow-hidden`}>
                                 <div className="flex gap-3">
-                                    {group.projectIconUrl ? (
-                                        <img src={group.projectIconUrl} alt={group.projectTitle || 'Project'} className="w-11 h-11 rounded-2xl object-cover shadow-[0_8px_20px_rgba(0,0,0,0.25)]" />
+                                    {group.entityIconUrl ? (
+                                        <img src={group.entityIconUrl} alt={group.entityTitle || 'Notification'} className="w-11 h-11 rounded-2xl object-cover shadow-[0_8px_20px_rgba(0,0,0,0.25)]" />
                                     ) : (
                                         <div className="w-11 h-11 rounded-2xl bg-modrinth-cardHover text-modrinth-green flex items-center justify-center shadow-[0_8px_20px_rgba(0,0,0,0.18)]">
                                             <Package size={18} />
@@ -892,9 +950,9 @@ const NotificationsModal: React.FC<{ isOpen: boolean; onClose: () => void; user:
                                             <div className="min-w-0">
                                                 <p className="text-[11px] uppercase tracking-[0.14em] text-modrinth-muted/80 mb-1">{t('notifications')}</p>
                                                 <h4 className="text-sm font-semibold text-modrinth-text leading-snug">
-                                                    {group.projectTitle ? (
+                                                    {group.entityKind === 'project' && group.entityTitle ? (
                                                         <>
-                                                            {t('project_updated_group')}: <span className="font-bold">{group.projectTitle}</span>
+                                                            {t('project_updated_group')}: <span className="font-bold">{group.entityTitle}</span>
                                                         </>
                                                     ) : primary.displayTitle}
                                                 </h4>
@@ -908,7 +966,7 @@ const NotificationsModal: React.FC<{ isOpen: boolean; onClose: () => void; user:
                                                 </button>
                                             )}
                                         </div>
-                                        {!group.projectTitle && (
+                                        {group.entityKind !== 'project' && (
                                             <p className="text-xs text-modrinth-muted leading-relaxed mt-2">{primary.displayText}</p>
                                         )}
                                     </div>
@@ -984,6 +1042,117 @@ const NotificationsModal: React.FC<{ isOpen: boolean; onClose: () => void; user:
     );
 };
 
+type AnalyticsSnapshot = {
+  capturedAt: number;
+  revenueLifetime?: number;
+  projects: Record<string, { downloads: number; followers: number }>;
+};
+
+type WeeklyProjectDelta = {
+  id: string;
+  title: string;
+  icon_url?: string;
+  downloads: number;
+  followers: number;
+};
+
+const normalizeOptionalMetric = (value: number | null | undefined) =>
+  typeof value === 'number' && Number.isFinite(value) ? Math.max(0, value) : undefined;
+
+const createAnalyticsSnapshot = (projects: ModrinthProject[], capturedAt = Date.now(), revenueLifetime?: number | null): AnalyticsSnapshot => ({
+  capturedAt,
+  revenueLifetime: normalizeOptionalMetric(revenueLifetime),
+  projects: projects.reduce<AnalyticsSnapshot['projects']>((acc, project) => {
+    acc[project.id] = {
+      downloads: project.downloads,
+      followers: project.followers
+    };
+    return acc;
+  }, {})
+});
+
+const isAnalyticsSnapshot = (value: unknown): value is AnalyticsSnapshot => {
+  if (!value || typeof value !== 'object') return false;
+  const snapshot = value as AnalyticsSnapshot;
+  const hasValidRevenue = snapshot.revenueLifetime === undefined || typeof snapshot.revenueLifetime === 'number';
+  return typeof snapshot.capturedAt === 'number' && hasValidRevenue && Boolean(snapshot.projects) && typeof snapshot.projects === 'object';
+};
+
+const readAnalyticsSnapshots = (storageKey: string): AnalyticsSnapshot[] => {
+  try {
+    const raw = localStorage.getItem(storageKey);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed.filter(isAnalyticsSnapshot) : [];
+  } catch {
+    return [];
+  }
+};
+
+const getSnapshotDay = (timestamp: number) => Math.floor(timestamp / DAY_MS);
+
+const compactAnalyticsSnapshots = (snapshots: AnalyticsSnapshot[], now = Date.now()) => {
+  const sorted = snapshots
+    .filter((snapshot) => snapshot.capturedAt <= now)
+    .sort((a, b) => a.capturedAt - b.capturedAt);
+  const cutoff = now - WEEK_MS;
+  const latestBeforeCutoff = [...sorted].reverse().find((snapshot) => snapshot.capturedAt <= cutoff);
+  const latestByDay = new Map<number, AnalyticsSnapshot>();
+
+  for (const snapshot of sorted.filter((item) => item.capturedAt > cutoff)) {
+    latestByDay.set(getSnapshotDay(snapshot.capturedAt), snapshot);
+  }
+
+  return [
+    ...(latestBeforeCutoff ? [latestBeforeCutoff] : []),
+    ...Array.from(latestByDay.values())
+  ].sort((a, b) => a.capturedAt - b.capturedAt);
+};
+
+const saveAnalyticsSnapshot = (storageKey: string, snapshot: AnalyticsSnapshot) => {
+  const snapshots = compactAnalyticsSnapshots([...readAnalyticsSnapshots(storageKey), snapshot], snapshot.capturedAt);
+  localStorage.setItem(storageKey, JSON.stringify(snapshots));
+};
+
+const calculateWeeklySummary = (projects: ModrinthProject[], snapshots: AnalyticsSnapshot[], revenueLifetime: number | null, now = Date.now()) => {
+  const currentSnapshot = createAnalyticsSnapshot(projects, now, revenueLifetime);
+  const retainedSnapshots = compactAnalyticsSnapshots([...snapshots, currentSnapshot], now);
+  const baseline =
+    [...retainedSnapshots].reverse().find((snapshot) => snapshot.capturedAt <= now - WEEK_MS) ??
+    retainedSnapshots[0] ??
+    currentSnapshot;
+
+  const projectDeltas: WeeklyProjectDelta[] = projects.map(project => {
+    const previous = baseline.projects[project.id];
+    return {
+      id: project.id,
+      title: project.title,
+      icon_url: project.icon_url,
+      downloads: Math.max(0, project.downloads - (previous?.downloads ?? project.downloads)),
+      followers: Math.max(0, project.followers - (previous?.followers ?? project.followers))
+    };
+  });
+
+  const downloads = projectDeltas.reduce((acc, project) => acc + project.downloads, 0);
+  const followers = projectDeltas.reduce((acc, project) => acc + project.followers, 0);
+  const revenue =
+    currentSnapshot.revenueLifetime !== undefined && baseline.revenueLifetime !== undefined
+      ? Math.max(0, currentSnapshot.revenueLifetime - baseline.revenueLifetime)
+      : null;
+  const activeProjects = projectDeltas.filter(project => project.downloads > 0 || project.followers > 0).length;
+  const topProject = [...projectDeltas].sort((a, b) => (b.downloads + b.followers) - (a.downloads + a.followers))[0] ?? null;
+  const daysTracked = Math.min(7, Math.max(1, Math.ceil((now - baseline.capturedAt) / DAY_MS)));
+
+  return {
+    downloads,
+    followers,
+    revenue,
+    activeProjects,
+    topProject,
+    daysTracked,
+    isBaselineReady: baseline !== currentSnapshot && now - baseline.capturedAt >= DAY_MS
+  };
+};
+
 const getFavoriteProjectsKey = (userId: string) => `${FAVORITE_PROJECTS_KEY_PREFIX}_${userId}`;
 
 const readFavoriteProjectIds = (userId: string) => {
@@ -1010,7 +1179,7 @@ const Dashboard: React.FC<{ user: ModrinthUser; token: string }> = ({ user, toke
   const [favoriteProjectIds, setFavoriteProjectIds] = useState<string[]>(() => readFavoriteProjectIds(user.id));
   const sortMenuRef = useRef<HTMLDivElement | null>(null);
   const navigate = useNavigate();
-  const { t, theme, language } = useSettings();
+  const { t, theme, language, showFavoriteProjects } = useSettings();
 
   useEffect(() => {
     setFavoriteProjectIds(readFavoriteProjectIds(user.id));
@@ -1018,17 +1187,19 @@ const Dashboard: React.FC<{ user: ModrinthUser; token: string }> = ({ user, toke
 
   const favoriteProjectIdSet = useMemo(() => new Set(favoriteProjectIds), [favoriteProjectIds]);
   const favoriteCount = useMemo(
-    () => projects.filter((project) => favoriteProjectIdSet.has(project.id)).length,
-    [projects, favoriteProjectIdSet]
+    () => showFavoriteProjects ? projects.filter((project) => favoriteProjectIdSet.has(project.id)).length : 0,
+    [projects, favoriteProjectIdSet, showFavoriteProjects]
   );
 
   const sortedProjects = useMemo(() => {
     const sorted = sortProjectsByMode(projects, sortMode);
+    if (!showFavoriteProjects) return sorted;
+
     return sorted
       .map((project, index) => ({ project, index, favorite: favoriteProjectIdSet.has(project.id) }))
       .sort((a, b) => Number(b.favorite) - Number(a.favorite) || a.index - b.index)
       .map(({ project }) => project);
-  }, [projects, sortMode, favoriteProjectIdSet]);
+  }, [projects, sortMode, favoriteProjectIdSet, showFavoriteProjects]);
 
   const loadProjects = useCallback(() => {
     let mounted = true;
@@ -1137,7 +1308,7 @@ const Dashboard: React.FC<{ user: ModrinthUser; token: string }> = ({ user, toke
           <div className="mb-1 flex items-center justify-between px-1" ref={sortMenuRef}>
             <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.14em] text-modrinth-muted/75">
               <span>{formatProjectsCountLabel(sortedProjects.length, language, t)}</span>
-              {favoriteCount > 0 && (
+              {showFavoriteProjects && favoriteCount > 0 && (
                 <span className="inline-flex items-center gap-1 rounded-full bg-yellow-400/10 px-2 py-1 text-yellow-400 tracking-normal">
                   <Star size={11} className="fill-current" />
                   {favoriteCount}
@@ -1201,7 +1372,8 @@ const Dashboard: React.FC<{ user: ModrinthUser; token: string }> = ({ user, toke
                   project={p}
                   onClick={(id) => navigate(`/project/${id}`)}
                   isFavorite={favoriteProjectIdSet.has(p.id)}
-                  onToggleFavorite={handleToggleFavoriteProject}
+                  onToggleFavorite={showFavoriteProjects ? handleToggleFavoriteProject : undefined}
+                  showFavoriteAction={showFavoriteProjects}
                 />
              </div>
           ))}
@@ -2872,109 +3044,51 @@ const AnalyticsPage: React.FC<{ user: ModrinthUser; token: string }> = ({ user, 
       !payoutDataVisible ||
       !walletConfigured);
 
+  const weeklyRevenueLifetime =
+    hasPayoutBalanceV3 || payoutLifetimeFromV3 !== null || payoutTotalFromV3 !== null
+      ? stats.lifetimeEarnings
+      : null;
+
   const weeklySnapshotStorageKey = useMemo(() => `rinthy_analytics_snapshots_${user.id}`, [user.id]);
   const [weeklyResetTick, setWeeklyResetTick] = useState(0);
+  const [weeklyClock, setWeeklyClock] = useState(() => Date.now());
 
-  type AnalyticsSnapshot = {
-    capturedAt: number;
-    projects: Record<string, { downloads: number; followers: number }>;
-  };
+  const weeklySummary = useMemo(
+    () => calculateWeeklySummary(projects, readAnalyticsSnapshots(weeklySnapshotStorageKey), weeklyRevenueLifetime, weeklyClock),
+    [projects, weeklySnapshotStorageKey, weeklyClock, weeklyResetTick, weeklyRevenueLifetime]
+  );
 
-  const weeklySummary = useMemo(() => {
-    const now = Date.now();
-    const weekMs = 7 * 24 * 60 * 60 * 1000;
-    const currentSnapshot: AnalyticsSnapshot = {
-      capturedAt: now,
-      projects: projects.reduce<AnalyticsSnapshot['projects']>((acc, project) => {
-        acc[project.id] = {
-          downloads: project.downloads,
-          followers: project.followers
-        };
-        return acc;
-      }, {})
-    };
-
-    const readSnapshots = (): AnalyticsSnapshot[] => {
-      try {
-        const raw = localStorage.getItem(weeklySnapshotStorageKey);
-        const parsed = raw ? JSON.parse(raw) : [];
-        if (!Array.isArray(parsed)) return [];
-        return parsed.filter((snapshot): snapshot is AnalyticsSnapshot => {
-          return Boolean(
-            snapshot &&
-            typeof snapshot.capturedAt === 'number' &&
-            snapshot.projects &&
-            typeof snapshot.projects === 'object'
-          );
-        });
-      } catch {
-        return [];
-      }
-    };
-
-    const snapshots = readSnapshots();
-    const oldestAllowed = now - 35 * 24 * 60 * 60 * 1000;
-    const retainedSnapshots = snapshots
-      .filter(snapshot => snapshot.capturedAt >= oldestAllowed)
-      .sort((a, b) => a.capturedAt - b.capturedAt);
-    const baseline =
-      retainedSnapshots
-        .filter(snapshot => snapshot.capturedAt <= now - weekMs)
-        .sort((a, b) => b.capturedAt - a.capturedAt)[0] ??
-      retainedSnapshots[0] ??
-      currentSnapshot;
+  useEffect(() => {
+    if (loading || projects.length === 0) return;
 
     try {
-      const latest = retainedSnapshots[retainedSnapshots.length - 1];
-      const hasMetricChange = projects.some(project => {
-        const previous = latest?.projects[project.id];
-        return previous?.downloads !== project.downloads || previous?.followers !== project.followers;
-      });
-      const shouldStoreCurrent = !latest || now - latest.capturedAt > 60 * 60 * 1000 || hasMetricChange;
-      const nextSnapshots = shouldStoreCurrent ? [...retainedSnapshots, currentSnapshot] : retainedSnapshots;
-      localStorage.setItem(weeklySnapshotStorageKey, JSON.stringify(nextSnapshots));
+      saveAnalyticsSnapshot(weeklySnapshotStorageKey, createAnalyticsSnapshot(projects, weeklyClock, weeklyRevenueLifetime));
     } catch {
-      // Local analytics can work without persistence; it will just reset on next launch.
+      // Local analytics can work without persistence; it will rebuild from the next visible snapshot.
     }
+  }, [loading, projects, weeklyClock, weeklyRevenueLifetime, weeklySnapshotStorageKey]);
 
-    const projectDeltas = projects.map(project => {
-      const previous = baseline.projects[project.id];
-      return {
-        id: project.id,
-        title: project.title,
-        icon_url: project.icon_url,
-        downloads: Math.max(0, project.downloads - (previous?.downloads ?? project.downloads)),
-        followers: Math.max(0, project.followers - (previous?.followers ?? project.followers))
-      };
-    });
-
-    const downloads = projectDeltas.reduce((acc, project) => acc + project.downloads, 0);
-    const followers = projectDeltas.reduce((acc, project) => acc + project.followers, 0);
-    const activeProjects = projectDeltas.filter(project => project.downloads > 0 || project.followers > 0).length;
-    const topProject = [...projectDeltas].sort((a, b) => (b.downloads + b.followers) - (a.downloads + a.followers))[0] ?? null;
-    const daysTracked = Math.max(1, Math.round((now - baseline.capturedAt) / (24 * 60 * 60 * 1000)));
-
-    return {
-      downloads,
-      followers,
-      activeProjects,
-      topProject,
-      daysTracked,
-      isBaselineReady: baseline !== currentSnapshot && now - baseline.capturedAt >= weekMs
+  useEffect(() => {
+    const refreshVisibleAnalytics = () => {
+      if (document.visibilityState === 'hidden') return;
+      setWeeklyClock(Date.now());
+      loadAnalytics();
     };
-  }, [projects, weeklySnapshotStorageKey, weeklyResetTick]);
+
+    const interval = window.setInterval(() => setWeeklyClock(Date.now()), 15 * 60 * 1000);
+    window.addEventListener('focus', refreshVisibleAnalytics);
+    document.addEventListener('visibilitychange', refreshVisibleAnalytics);
+
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener('focus', refreshVisibleAnalytics);
+      document.removeEventListener('visibilitychange', refreshVisibleAnalytics);
+    };
+  }, [loadAnalytics]);
 
   const resetWeeklySummary = useCallback(() => {
-    const snapshot: AnalyticsSnapshot = {
-      capturedAt: Date.now(),
-      projects: projects.reduce<AnalyticsSnapshot['projects']>((acc, project) => {
-        acc[project.id] = {
-          downloads: project.downloads,
-          followers: project.followers
-        };
-        return acc;
-      }, {})
-    };
+    const now = Date.now();
+    const snapshot = createAnalyticsSnapshot(projects, now, weeklyRevenueLifetime);
 
     try {
       localStorage.setItem(weeklySnapshotStorageKey, JSON.stringify([snapshot]));
@@ -2983,7 +3097,8 @@ const AnalyticsPage: React.FC<{ user: ModrinthUser; token: string }> = ({ user, 
     }
 
     setWeeklyResetTick((value) => value + 1);
-  }, [projects, weeklySnapshotStorageKey]);
+    setWeeklyClock(now);
+  }, [projects, weeklyRevenueLifetime, weeklySnapshotStorageKey]);
 
   if (loading) return <div className="flex justify-center pt-40 animate-fade-in"><Loader2 className="animate-spin text-modrinth-green" /></div>;
 
@@ -3185,6 +3300,16 @@ const AnalyticsPage: React.FC<{ user: ModrinthUser; token: string }> = ({ user, 
             </div>
             <div className="bg-modrinth-bg/40 rounded-2xl p-4">
               <div className="flex items-center justify-between mb-2">
+                <DollarSign size={18} className="text-modrinth-green" />
+                <span className="text-[10px] uppercase text-modrinth-muted font-bold">{t('payouts')}</span>
+              </div>
+              <div className="text-2xl font-bold text-modrinth-text">
+                {weeklySummary.revenue === null ? '--' : `+$${weeklySummary.revenue.toFixed(2)}`}
+              </div>
+              <div className="text-xs text-modrinth-muted">{t('weekly_revenue')}</div>
+            </div>
+            <div className="bg-modrinth-bg/40 rounded-2xl p-4">
+              <div className="flex items-center justify-between mb-2">
                 <Activity size={18} className="text-modrinth-green" />
                 <span className="text-[10px] uppercase text-modrinth-muted font-bold">{t('active_label')}</span>
               </div>
@@ -3289,7 +3414,7 @@ const AnalyticsPage: React.FC<{ user: ModrinthUser; token: string }> = ({ user, 
 };
 
 const SettingsPage: React.FC<{ user: ModrinthUser; onLogout: () => void; token: string; updateInfo?: GitHubRelease | null }> = ({ user, onLogout, token, updateInfo }) => {
-  const { theme, setTheme, language, setLanguage, t, accentColor, setAccentColor } = useSettings();
+  const { theme, setTheme, language, setLanguage, t, accentColor, setAccentColor, showFavoriteProjects, setShowFavoriteProjects } = useSettings();
   const [showProfileEdit, setShowProfileEdit] = useState(false);
   const [currUser, setCurrUser] = useState(user);
   const [colorInput, setColorInput] = useState(accentColor);
@@ -3413,6 +3538,25 @@ const SettingsPage: React.FC<{ user: ModrinthUser; onLogout: () => void; token: 
                />
                <p className="text-xs text-modrinth-muted mt-2">{t('hex_format_hint')}</p>
              </div>
+           </div>
+         </div>
+
+         <div className="bg-modrinth-card/75 backdrop-blur-xl p-4 rounded-3xl shadow-[0_10px_26px_rgba(0,0,0,0.22)] overflow-hidden">
+           <div className="flex items-center justify-between gap-4">
+             <div className="min-w-0">
+               <div className="flex items-center gap-2 text-modrinth-green font-bold text-sm uppercase"><Star size={16} /> {t('favorite_projects')}</div>
+               <p className="text-xs text-modrinth-muted mt-1 leading-relaxed">{t('favorite_projects_desc')}</p>
+             </div>
+             <button
+               type="button"
+               role="switch"
+               aria-checked={showFavoriteProjects}
+               data-state={showFavoriteProjects ? 'checked' : 'unchecked'}
+               onClick={() => setShowFavoriteProjects(!showFavoriteProjects)}
+               className="app-switch"
+             >
+               <span className="app-switch__thumb" />
+             </button>
            </div>
          </div>
 

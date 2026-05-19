@@ -39,6 +39,83 @@ body {
   scrollbar-width: none;
 }
 
+.app-switch {
+  position: relative;
+  display: inline-flex;
+  width: 3rem;
+  height: 1.75rem;
+  flex-shrink: 0;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.1875rem;
+  background: var(--bg);
+  box-shadow:
+    inset 0 1px 2px rgba(0, 0, 0, 0.28),
+    0 1px 0 rgba(255, 255, 255, 0.04);
+  transition:
+    background-color 180ms ease,
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    transform 120ms ease;
+}
+
+.app-switch[data-state='checked'] {
+  border-color: var(--accent-color);
+  background: var(--accent-color);
+  box-shadow:
+    inset 0 1px 1px rgba(255, 255, 255, 0.24),
+    0 0 0 1px rgba(48, 178, 124, 0.1),
+    0 8px 18px rgba(48, 178, 124, 0.22);
+}
+
+.app-switch:active {
+  transform: scale(0.97);
+}
+
+.app-switch:focus-visible {
+  outline: 2px solid var(--accent-color);
+  outline-offset: 3px;
+}
+
+.app-switch__thumb {
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: 999px;
+  background: #ffffff;
+  box-shadow:
+    0 2px 8px rgba(0, 0, 0, 0.32),
+    0 1px 1px rgba(0, 0, 0, 0.18);
+  transform: translateX(0);
+  transition:
+    transform 260ms cubic-bezier(0.2, 0.9, 0.2, 1.15),
+    background-color 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.app-switch[data-state='unchecked'] .app-switch__thumb {
+  background: var(--muted);
+}
+
+.app-switch[data-state='checked'] .app-switch__thumb {
+  transform: translateX(1.25rem);
+}
+
+.app-switch:active .app-switch__thumb {
+  transform: scaleX(1.12);
+}
+
+.app-switch[data-state='checked']:active .app-switch__thumb {
+  transform: translateX(1.25rem) scaleX(1.12);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-switch,
+  .app-switch__thumb {
+    transition-duration: 1ms;
+  }
+}
+
 .markdown-preview img {
   max-width: 100%;
   height: auto;

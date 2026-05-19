@@ -1,12 +1,16 @@
 {
   "name": "rinthy",
   "private": true,
-  "version": "1.9.0",
+  "version": "1.9.1",
   "license": "GPL-3.0-only",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "typecheck": "tsc --noEmit",
+    "check:cla": "node scripts/check-cla.mjs",
+    "check:quality": "node scripts/check-code-quality.mjs",
+    "check": "npm run typecheck && npm run check:quality",
     "preview": "vite preview"
   },
   "dependencies": {

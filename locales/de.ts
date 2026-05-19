@@ -172,6 +172,7 @@ export const de = {
   last_7_days: '7 Tage',
   weekly_downloads: 'Downloads diese Woche',
   weekly_follows: 'Follower diese Woche',
+  weekly_revenue: 'Diese Woche verdient',
   active_label: 'Aktiv',
   active_projects_week: 'Projekte mit Wachstum',
   tracked_label: 'Tracking',
@@ -192,5 +193,7 @@ export const de = {
   update_later: 'Später',
   update_whats_new: 'Was ist neu',
   update_outdated: 'Veraltete Version',
-  update_view_release: 'Release ansehen'
+  update_view_release: 'Release ansehen',
+  favorite_projects: 'Favorisierte Projekte',
+  favorite_projects_desc: 'Favoriten-Schaltfläche auf Projektkarten anzeigen und Favoriten oben anheften.'
 } as const;

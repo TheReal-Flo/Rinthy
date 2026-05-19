@@ -172,6 +172,7 @@ export const it = { // Italian translation made by EmanuelPlays
     last_7_days: '7 giorni',
     weekly_downloads: 'Download questa settimana',
     weekly_follows: 'Seguiti questa settimana',
+    weekly_revenue: 'Guadagnato questa settimana',
     active_label: 'Attivi',
     active_projects_week: 'Progetti in crescita',
     tracked_label: 'Tracciamento',
@@ -192,5 +193,7 @@ export const it = { // Italian translation made by EmanuelPlays
     update_later: 'Più tardi',
     update_whats_new: 'Novità',
     update_outdated: 'Versione obsoleta',
-    update_view_release: 'Vedi release'
+    update_view_release: 'Vedi release',
+    favorite_projects: 'Progetti preferiti',
+    favorite_projects_desc: 'Mostra il pulsante dei preferiti sulle schede dei progetti e tieni i preferiti in alto.'
 } as const;
