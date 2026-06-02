@@ -119,6 +119,7 @@ export const it = { // Italian translation made by EmanuelPlays
     language: 'Lingua',
     dark: 'Scuro',
     light: 'Chiaro',
+    glass: 'Vetro',
     role: 'Ruolo',
     remove: 'Rimuovi',
     choose_file: 'Scegli file',

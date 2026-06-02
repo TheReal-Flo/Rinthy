@@ -119,6 +119,7 @@ export const en = {
   language: 'Language',
   dark: 'Dark',
   light: 'Light',
+  glass: 'Glass',
   role: 'Role',
   remove: 'Remove',
   choose_file: 'Choose file',

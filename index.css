@@ -23,6 +23,66 @@ body {
   background: var(--bg);
 }
 
+.theme-glass,
+.theme-glass body {
+  background:
+    radial-gradient(circle at 16% 0%, rgba(124, 245, 189, 0.18), transparent 28rem),
+    radial-gradient(circle at 88% 12%, rgba(88, 166, 255, 0.12), transparent 24rem),
+    linear-gradient(145deg, #06100f 0%, #0a1418 46%, #11100c 100%) !important;
+}
+
+.theme-glass #root {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.035), transparent 15rem),
+    transparent;
+}
+
+.theme-glass .app-panel,
+.theme-glass [class*='bg-modrinth-card/'][class*='backdrop-blur-xl'] {
+  border-color: rgba(207, 255, 237, 0.18) !important;
+  background: linear-gradient(145deg, rgba(23, 38, 37, 0.78), rgba(10, 18, 20, 0.54)) !important;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.12) inset,
+    0 18px 46px rgba(0, 0, 0, 0.38),
+    0 0 0 1px rgba(124, 245, 189, 0.035) !important;
+  backdrop-filter: blur(22px) saturate(1.24) !important;
+  -webkit-backdrop-filter: blur(22px) saturate(1.24) !important;
+}
+
+.theme-glass .app-panel-soft,
+.theme-glass .app-icon-tile,
+.theme-glass .app-command,
+.theme-glass .app-input,
+.theme-glass .app-select,
+.theme-glass .app-switch,
+.theme-glass .app-responsive-sheet,
+.theme-glass .app-toast {
+  border-color: rgba(207, 255, 237, 0.16);
+  background: rgba(9, 18, 19, 0.52);
+  backdrop-filter: blur(18px) saturate(1.18);
+  -webkit-backdrop-filter: blur(18px) saturate(1.18);
+}
+
+.theme-glass .app-topbar {
+  border-bottom-color: rgba(207, 255, 237, 0.12);
+  background: rgba(7, 16, 15, 0.72);
+  backdrop-filter: blur(22px) saturate(1.22);
+  -webkit-backdrop-filter: blur(22px) saturate(1.22);
+}
+
+.theme-glass .app-primary {
+  color: #02110b;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.34) inset,
+    0 14px 34px rgba(124, 245, 189, 0.2);
+}
+
+.theme-glass .app-command:hover,
+.theme-glass .app-select-control:hover,
+.theme-glass .app-input:focus {
+  box-shadow: 0 0 0 3px rgba(124, 245, 189, 0.12);
+}
+
 button,
 a,
 input,

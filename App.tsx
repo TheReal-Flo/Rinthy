@@ -3,7 +3,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 declare const __APP_VERSION__: string;
 import { HashRouter, Routes, Route, useNavigate, useParams, Outlet, useLocation } from 'react-router-dom';
 import { App as CapApp } from '@capacitor/app';
-import { Loader2, LogOut, ArrowLeft, Save, ExternalLink, BarChart2, ShieldCheck, Key, ChevronRight, Download, Activity, BookOpen, FileText, Monitor, Server, Edit3, Globe, Wallet, DollarSign, Archive, Lock, EyeOff, Info, Heart, Clock, Users, Trash2, Moon, Sun, Smartphone, UserPlus, Search, X, Check, ChevronDown, Bell, AlertTriangle, Image as ImageIcon, Upload, Package, Calendar, File as FileIcon, Layers, MousePointerClick, CheckCheck, RefreshCw, MoreVertical, Star, Plus } from 'lucide-react';
+import { Loader2, LogOut, ArrowLeft, Save, ExternalLink, BarChart2, ShieldCheck, Key, ChevronRight, Download, Activity, BookOpen, FileText, Monitor, Server, Edit3, Globe, Wallet, DollarSign, Archive, Lock, EyeOff, Info, Heart, Clock, Users, Trash2, Moon, Sun, Smartphone, UserPlus, Search, X, Check, ChevronDown, Bell, AlertTriangle, Image as ImageIcon, Upload, Package, Calendar, File as FileIcon, Layers, MousePointerClick, CheckCheck, RefreshCw, MoreVertical, Star, Plus, Sparkles } from 'lucide-react';
 import { fetchCurrentUser, fetchUserProjects, fetchProject, fetchOrganization, fetchOrganizationProjects, fetchUserOrganizations, createProject, updateProject, fetchProjectMembers, deleteTeamMember, updateTeamMember, searchUser, addTeamMember, modifyUser, fetchNotifications, markNotificationRead, markMultipleNotificationsRead, runNotificationAction, changeProjectIcon, deleteProjectIcon, deleteProject, addGalleryImage, deleteGalleryImage, fetchProjectDependencies, fetchProjectVersions, fetchGameVersionTags, fetchLoaderTags, modifyVersion, deleteVersionById, fetchUserPayoutHistoryWithStatus, fetchUserByIdWithStatus, fetchPayoutBalanceV3WithStatus, joinTeam, transferTeamOwnership, changeUserAvatar, deleteUserAvatar } from './services/modrinthService';
 import { AuthState, ModrinthUser, ModrinthProject, ModrinthOrganization, NavTab, ProjectMember, ThemeMode, Language, UserSearchResult, ModifyUserPayload, ModrinthNotification, ProjectDependency, ModrinthVersion, ModrinthPayoutHistory } from './types';
 import ProjectCard from './components/ProjectCard';
@@ -2587,7 +2587,7 @@ const SettingsPage: React.FC<{ user: ModrinthUser; onLogout: () => void; token: 
       const parsed = JSON.parse(text);
       const imported = parsed?.settings ?? parsed;
 
-      if (imported.theme === 'dark' || imported.theme === 'light') setTheme(imported.theme);
+      if (imported.theme === 'dark' || imported.theme === 'light' || imported.theme === 'glass') setTheme(imported.theme);
       if (typeof imported.language === 'string' && isSupportedLanguage(imported.language)) setLanguage(imported.language);
       if (typeof imported.accentColor === 'string' && /^#[0-9A-F]{6}$/i.test(imported.accentColor)) {
         const importedAccent = imported.accentColor.toUpperCase();
@@ -2719,12 +2719,16 @@ const SettingsPage: React.FC<{ user: ModrinthUser; onLogout: () => void; token: 
 
             <div>
               <div className="mb-2 flex items-center gap-2 text-xs font-extrabold uppercase tracking-[0.08em] text-modrinth-muted"><Moon size={14} /> {t('theme')}</div>
-              <div className="flex rounded-lg border border-modrinth-border bg-modrinth-bg p-1">
-                {(['dark', 'light'] as ThemeMode[]).map(m => (
-                  <button key={m} onClick={() => setTheme(m)} className={`flex-1 rounded-md py-2 text-xs font-extrabold ${theme === m ? 'bg-modrinth-card text-modrinth-text shadow-sm' : 'text-modrinth-muted hover:text-modrinth-text'}`}>
-                    {t(m)}
-                  </button>
-                ))}
+              <div className="grid grid-cols-3 gap-1 rounded-lg border border-modrinth-border bg-modrinth-bg p-1">
+                {(['dark', 'light', 'glass'] as ThemeMode[]).map(m => {
+                  const Icon = m === 'light' ? Sun : m === 'glass' ? Sparkles : Moon;
+                  return (
+                    <button key={m} type="button" onClick={() => setTheme(m)} className={`flex min-h-10 items-center justify-center gap-1.5 rounded-md px-2 py-2 text-xs font-extrabold ${theme === m ? 'bg-modrinth-card text-modrinth-text shadow-sm' : 'text-modrinth-muted hover:text-modrinth-text'}`}>
+                      <Icon size={13} />
+                      <span className="truncate">{t(m)}</span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
 

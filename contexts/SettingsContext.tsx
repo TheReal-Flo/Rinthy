@@ -10,7 +10,7 @@ const SettingsContext = createContext<SettingsContextType | undefined>(undefined
 export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [theme, setThemeState] = useState<ThemeMode>(() => {
     const stored = localStorage.getItem('theme');
-    return stored === 'light' ? 'light' : 'dark';
+    return stored === 'light' || stored === 'glass' ? stored : 'dark';
   });
   const [language, setLanguageState] = useState<Language>(() => {
     const stored = localStorage.getItem('language');

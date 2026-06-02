@@ -127,6 +127,7 @@ export const fr = {
   language: "Langue",
   dark: "Sombre",
   light: "Clair",
+  glass: "Verre",
   role: "Rôle",
   remove: "Supprimer",
   choose_file: "Choisir un fichier",

@@ -119,6 +119,7 @@ export const de = {
   language: 'Sprache',
   dark: 'Dunkel',
   light: 'Hell',
+  glass: 'Glas',
   role: 'Rolle',
   remove: 'Entfernen',
   choose_file: 'Datei auswählen',

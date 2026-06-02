@@ -220,7 +220,7 @@ export interface AuthState {
   hasSeenOnboarding: boolean;
 }
 
-export type ThemeMode = 'dark' | 'light';
+export type ThemeMode = 'dark' | 'light' | 'glass';
 export type Language = AppLanguage;
 
 export interface SettingsContextType {

@@ -119,6 +119,7 @@ export const ru = {
   language: 'Язык',
   dark: 'Темная',
   light: 'Светлая',
+  glass: 'Стекло',
   role: 'Роль',
   remove: 'Удалить',
   choose_file: 'Выбрать файл',
