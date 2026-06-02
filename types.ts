@@ -49,11 +49,15 @@ export interface ModrinthNotification {
   link: string;
   read: boolean;
   created: string;
-  actions?: any[];
+  actions?: Array<{
+    title?: string;
+    action_route?: [string, string] | string[];
+  }>;
 }
 
 export interface GalleryImage {
   url: string;
+  raw_url?: string;
   featured: boolean;
   title?: string;
   description?: string;
@@ -99,10 +103,28 @@ export interface ModrinthVersion {
   files: ModrinthVersionFile[];
 }
 
+export interface CreateModrinthVersionPayload {
+  project_id: string;
+  name: string;
+  version_number: string;
+  changelog?: string;
+  dependencies: ProjectDependency[];
+  game_versions: string[];
+  version_type: 'release' | 'beta' | 'alpha';
+  loaders: string[];
+  featured: boolean;
+  file_parts: string[];
+  primary_file: string;
+  files: Array<{ part: string; file: File }>;
+}
+
 export interface ModrinthProject {
   id: string;
   slug: string;
   team: string; 
+  organization?: string | null;
+  organization_id?: string | null;
+  name?: string;
   title: string;
   description: string;
   categories: string[];
@@ -138,11 +160,33 @@ export interface ModrinthOrganization {
   color?: number | null;
 }
 
+export interface ModrinthOrganizationPayload {
+  slug: string;
+  name: string;
+  description?: string;
+}
+
+export interface CreateModrinthProjectPayload {
+  slug: string;
+  title: string;
+  description: string;
+  body: string;
+  project_type: string;
+  categories: string[];
+  client_side: 'required' | 'optional' | 'unsupported';
+  server_side: 'required' | 'optional' | 'unsupported';
+  license_id: string;
+  organization_id?: string;
+  icon?: File | null;
+}
+
 export interface ProjectMember {
   user: ModrinthUser;
   team_id: string;
   role: string;
+  is_owner?: boolean;
   permissions?: number;
+  organization_permissions?: number;
   payouts_split?: number;
   ordering?: number;
   accepted: boolean;
@@ -163,6 +207,7 @@ export interface ModifyUserPayload {
 
 export enum NavTab {
   PROJECTS = 'projects',
+  TEAMS = 'teams',
   ANALYTICS = 'analytics',
   SETTINGS = 'settings'
 }

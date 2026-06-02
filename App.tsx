@@ -1,48 +1,54 @@
-﻿import React, { useState, useEffect, useCallback, useMemo, createContext, useContext, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 
 declare const __APP_VERSION__: string;
 import { HashRouter, Routes, Route, useNavigate, useParams, Outlet, useLocation } from 'react-router-dom';
 import { App as CapApp } from '@capacitor/app';
-import { Loader2, LogOut, ArrowLeft, Save, ExternalLink, BarChart2, ShieldCheck, Key, ChevronRight, Download, Activity, BookOpen, FileText, Monitor, Server, Edit3, Globe, Wallet, DollarSign, Archive, Lock, EyeOff, Info, Heart, Clock, Users, Trash2, Moon, Sun, Smartphone, UserPlus, Search, X, Check, ChevronDown, Bell, AlertTriangle, Image as ImageIcon, Upload, Package, Calendar, File as FileIcon, Layers, MousePointerClick, CheckCheck, RefreshCw, MoreVertical, Star } from 'lucide-react';
-import { fetchCurrentUser, fetchUserProjects, fetchProject, fetchOrganization, updateProject, fetchProjectMembers, deleteTeamMember, updateTeamMember, searchUser, addTeamMember, modifyUser, fetchNotifications, deleteNotification, markNotificationRead, markMultipleNotificationsRead, changeProjectIcon, deleteProjectIcon, addGalleryImage, deleteGalleryImage, fetchProjectDependencies, fetchProjectVersions, fetchGameVersionTags, fetchLoaderTags, modifyVersion, deleteVersionById, fetchUserPayoutHistoryWithStatus, fetchUserByIdWithStatus, fetchPayoutBalanceV3WithStatus, joinTeam, transferTeamOwnership } from './services/modrinthService';
-import { AuthState, ModrinthUser, ModrinthProject, ModrinthOrganization, NavTab, ProjectMember, SettingsContextType, ThemeMode, Language, UserSearchResult, ModifyUserPayload, ModrinthNotification, ProjectDependency, ModrinthVersion, ModrinthPayoutHistory } from './types';
+import { Loader2, LogOut, ArrowLeft, Save, ExternalLink, BarChart2, ShieldCheck, Key, ChevronRight, Download, Activity, BookOpen, FileText, Monitor, Server, Edit3, Globe, Wallet, DollarSign, Archive, Lock, EyeOff, Info, Heart, Clock, Users, Trash2, Moon, Sun, Smartphone, UserPlus, Search, X, Check, ChevronDown, Bell, AlertTriangle, Image as ImageIcon, Upload, Package, Calendar, File as FileIcon, Layers, MousePointerClick, CheckCheck, RefreshCw, MoreVertical, Star, Plus } from 'lucide-react';
+import { fetchCurrentUser, fetchUserProjects, fetchProject, fetchOrganization, fetchOrganizationProjects, fetchUserOrganizations, createProject, updateProject, fetchProjectMembers, deleteTeamMember, updateTeamMember, searchUser, addTeamMember, modifyUser, fetchNotifications, markNotificationRead, markMultipleNotificationsRead, runNotificationAction, changeProjectIcon, deleteProjectIcon, deleteProject, addGalleryImage, deleteGalleryImage, fetchProjectDependencies, fetchProjectVersions, fetchGameVersionTags, fetchLoaderTags, modifyVersion, deleteVersionById, fetchUserPayoutHistoryWithStatus, fetchUserByIdWithStatus, fetchPayoutBalanceV3WithStatus, joinTeam, transferTeamOwnership, changeUserAvatar, deleteUserAvatar } from './services/modrinthService';
+import { AuthState, ModrinthUser, ModrinthProject, ModrinthOrganization, NavTab, ProjectMember, ThemeMode, Language, UserSearchResult, ModifyUserPayload, ModrinthNotification, ProjectDependency, ModrinthVersion, ModrinthPayoutHistory } from './types';
 import ProjectCard from './components/ProjectCard';
 import BottomNav from './components/BottomNav';
-import { DEFAULT_LANGUAGE, isSupportedLanguage, LANGUAGE_OPTIONS, TRANSLATIONS } from './locales';
+import { LoginScreen, Onboarding, TokenHelpModal, WelcomeSetup } from './components/AuthScreens';
+import ProjectDetail from './pages/ProjectDetail';
+import TeamsPage, { CreateProjectSheet } from './pages/TeamsPage';
+import { DEFAULT_LANGUAGE, isSupportedLanguage } from './locales';
+import { LanguageSelect, SettingsProvider, useSettings } from './contexts/SettingsContext';
+import { calculateWeeklySummary, createAnalyticsSnapshot, readAnalyticsSnapshots, saveAnalyticsSnapshot, type AnalyticsSnapshot } from './utils/analyticsSnapshots';
+import { formatProjectsCountLabel, getStoredProjectSortMode, PROJECT_SORT_OPTIONS, ProjectSortMode, readFavoriteProjectIds, saveFavoriteProjectIds, saveProjectSortMode, sortProjectsByMode } from './utils/projectPrefs';
+import { showToast } from './utils/toast';
 const MarkdownRenderer = React.lazy(() => import('./components/MarkdownRenderer'));
 
 // --- Back Button Handler for Android ---
 const BackButtonHandler: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const [lastBackPress, setLastBackPress] = useState(0);
-  const { t, theme, language } = useSettings();
+  const { t } = useSettings();
+  const lastBackPressRef = useRef(0);
 
   useEffect(() => {
     if (!CapApp || typeof (CapApp as any).addListener !== 'function') return;
+    let cancelled = false;
 
     const handleBackButton = CapApp.addListener('backButton', ({ canGoBack }) => {
+      if (cancelled) return;
       if (location.pathname !== '/') {
         navigate(-1);
       } else {
         const now = Date.now();
-        if (now - lastBackPress < 2000) {
+        if (now - lastBackPressRef.current < 2000) {
           CapApp.exitApp();
         } else {
-          setLastBackPress(now);
-          const toast = document.createElement('div');
-          toast.innerText = t('press_back_again');
-          toast.className = 'fixed bottom-24 left-1/2 -translate-x-1/2 bg-modrinth-card/85 backdrop-blur-xl text-modrinth-text px-6 py-3 rounded-full shadow-[0_12px_30px_rgba(0,0,0,0.35)] z-[200] font-medium text-sm';
-          document.body.appendChild(toast);
-          setTimeout(() => toast.remove(), 2000);
+          lastBackPressRef.current = now;
+          showToast(t('press_back_again'), 'neutral');
         }
       }
     });
 
     return () => {
+      cancelled = true;
       handleBackButton.then(h => h.remove()).catch(() => {});
     };
-  }, [navigate, location, lastBackPress, t]);
+  }, [navigate, location, t]);
 
   return null;
 };
@@ -127,8 +133,9 @@ const checkForUpdates = async (): Promise<GitHubRelease | null> => {
     if (latestVersion !== APP_VERSION && compareVersions(latestVersion, APP_VERSION) > 0) {
       return release;
     }
-  } catch (e) {
-    console.error('Update check failed:', e);
+  } catch {
+    // GitHub update checks are best-effort. Browser dev can hit CORS/network
+    // restrictions, and this should not pollute the app console.
   }
   return null;
 };
@@ -149,14 +156,6 @@ const compareVersions = (a: string, b: string): number => {
 };
 
 // --- Icons ---
-const ModrinthLogo = ({ className }: { className?: string }) => (
-  <img
-    src="/logo.png"
-    alt="App logo"
-    className={className}
-  />
-);
-
 type ResolvedNotification = ModrinthNotification & {
   displayTitle: string;
   displayText: string;
@@ -175,8 +174,6 @@ type NotificationEntityRef = {
   projectSlug?: string;
 };
 
-type ProjectSortMode = 'popularity' | 'updated' | 'followers' | 'title';
-
 type NotificationGroup = {
   key: string;
   projectTitle: string | null;
@@ -188,35 +185,14 @@ type NotificationGroup = {
 };
 
 const MODRINTH_ID_RE = /\b[A-Za-z0-9]{8}\b/g;
-const PROJECT_SORT_KEY = 'project_sort_mode';
-const FAVORITE_PROJECTS_KEY_PREFIX = 'favorite_projects';
-const SHOW_FAVORITE_PROJECTS_KEY = 'show_favorite_projects';
-const DAY_MS = 24 * 60 * 60 * 1000;
-const WEEK_MS = 7 * DAY_MS;
-
-const PROJECT_SORT_OPTIONS: ProjectSortMode[] = ['popularity', 'updated', 'title'];
 
 const replaceResolvedIds = (value: string, replacements: Record<string, string>) =>
   value.replace(MODRINTH_ID_RE, (match) => replacements[match] || match);
 
-const getStoredProjectSortMode = (): ProjectSortMode => {
-  const raw = localStorage.getItem(PROJECT_SORT_KEY);
-  return raw === 'updated' || raw === 'followers' || raw === 'title' ? raw : 'popularity';
-};
-
-const sortProjectsByMode = (projects: ModrinthProject[], mode: ProjectSortMode) => {
-  const next = [...projects];
-  switch (mode) {
-    case 'updated':
-      return next.sort((a, b) => new Date(b.updated).getTime() - new Date(a.updated).getTime());
-    case 'followers':
-      return next.sort((a, b) => b.followers - a.followers || b.downloads - a.downloads);
-    case 'title':
-      return next.sort((a, b) => a.title.localeCompare(b.title));
-    case 'popularity':
-    default:
-      return next.sort((a, b) => b.downloads - a.downloads || b.followers - a.followers);
-  }
+const getModrinthLink = (link?: string | null) => {
+  if (!link) return null;
+  if (/^https?:\/\//i.test(link)) return link;
+  return `https://modrinth.com${link.startsWith('/') ? link : `/${link}`}`;
 };
 
 const formatNotificationRelativeTime = (value: string, locale: string) => {
@@ -231,25 +207,6 @@ const formatNotificationRelativeTime = (value: string, locale: string) => {
 
   const diffDays = Math.round(diffHours / 24);
   return locale === 'ru' ? `${diffDays} дн назад` : `${diffDays}d ago`;
-};
-
-const formatProjectsCountLabel = (count: number, language: Language, t: (key: string) => string) => {
-  if (language !== 'ru') {
-    return `${count} ${t('projects_label')}`;
-  }
-
-  const mod10 = count % 10;
-  const mod100 = count % 100;
-
-  if (mod10 === 1 && mod100 !== 11) {
-    return `${count} проект`;
-  }
-
-  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) {
-    return `${count} проекта`;
-  }
-
-  return `${count} проектов`;
 };
 
 const getNotificationEntityRefs = (notif: ModrinthNotification): NotificationEntityRef[] => {
@@ -273,337 +230,89 @@ const getNotificationEntityRefs = (notif: ModrinthNotification): NotificationEnt
   return Array.from(refs.values());
 };
 
-// --- Settings Context ---
-const SettingsContext = createContext<SettingsContextType | undefined>(undefined);
+// --- Components ---
+const DISMISS_ANIMATION_MS = 180;
 
-const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [theme, setThemeState] = useState<ThemeMode>(() => {
-    const stored = localStorage.getItem('theme');
-    return stored === 'light' ? 'light' : 'dark';
-  });
-  const [language, setLanguageState] = useState<Language>(() => {
-    const stored = localStorage.getItem('language');
-    return stored && isSupportedLanguage(stored) ? stored : DEFAULT_LANGUAGE;
-  });
-  const [accentColor, setAccentColorState] = useState<string>(() => localStorage.getItem('accentColor') || '#30B27C');
-  const [showFavoriteProjects, setShowFavoriteProjectsState] = useState<boolean>(() => localStorage.getItem(SHOW_FAVORITE_PROJECTS_KEY) !== 'false');
-
-  const setTheme = (newTheme: ThemeMode) => {
-    setThemeState(newTheme);
-    localStorage.setItem('theme', newTheme);
-    document.documentElement.className = `theme-${newTheme}`;
-  };
-
-  const setLanguage = (newLang: Language) => {
-    setLanguageState(newLang);
-    localStorage.setItem('language', newLang);
-  };
-
-  const setAccentColor = (color: string) => {
-    setAccentColorState(color);
-    localStorage.setItem('accentColor', color);
-    document.documentElement.style.setProperty('--accent-color', color);
-  };
-
-  const setShowFavoriteProjects = (enabled: boolean) => {
-    setShowFavoriteProjectsState(enabled);
-    localStorage.setItem(SHOW_FAVORITE_PROJECTS_KEY, enabled ? 'true' : 'false');
-  };
+const useAnimatedDismiss = (isOpen: boolean, onClose: () => void) => {
+  const [visible, setVisible] = useState(isOpen);
+  const [closing, setClosing] = useState(false);
+  const timerRef = useRef<number | null>(null);
 
   useEffect(() => {
-    document.documentElement.className = `theme-${theme}`;
-    document.documentElement.style.setProperty('--accent-color', accentColor);
+    if (isOpen) {
+      if (timerRef.current) window.clearTimeout(timerRef.current);
+      setVisible(true);
+      setClosing(false);
+    } else if (visible) {
+      setClosing(true);
+      timerRef.current = window.setTimeout(() => {
+        setVisible(false);
+        setClosing(false);
+      }, DISMISS_ANIMATION_MS);
+    }
+  }, [isOpen, visible]);
+
+  useEffect(() => () => {
+    if (timerRef.current) window.clearTimeout(timerRef.current);
   }, []);
 
-  const t = (key: string) => {
-    return (TRANSLATIONS[language] as Record<string, string>)[key] || key;
-  };
+  const requestClose = useCallback(() => {
+    if (closing) return;
+    setClosing(true);
+    timerRef.current = window.setTimeout(() => {
+      setVisible(false);
+      setClosing(false);
+      onClose();
+    }, DISMISS_ANIMATION_MS);
+  }, [closing, onClose]);
 
-  return (
-    <SettingsContext.Provider value={{ theme, setTheme, language, setLanguage, t, accentColor, setAccentColor, showFavoriteProjects, setShowFavoriteProjects }}>
-      {children}
-    </SettingsContext.Provider>
-  );
-};
-
-const useSettings = () => {
-  const context = useContext(SettingsContext);
-  if (!context) throw new Error('useSettings must be used within SettingsProvider');
-  return context;
-};
-
-const LanguageSelect: React.FC<{
-  value: Language;
-  onChange: (language: Language) => void;
-  compact?: boolean;
-}> = ({ value, onChange, compact = false }) => {
-  const { theme, t } = useSettings();
-  const [open, setOpen] = useState(false);
-  const rootRef = useRef<HTMLDivElement | null>(null);
-  const current = LANGUAGE_OPTIONS.find((option) => option.code === value) || LANGUAGE_OPTIONS[0];
-
-  useEffect(() => {
-    if (!open) return;
-
-    const handleClickOutside = (event: MouseEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) {
-        setOpen(false);
-      }
-    };
-
-    document.addEventListener('pointerdown', handleClickOutside);
-    return () => document.removeEventListener('pointerdown', handleClickOutside);
-  }, [open]);
-
-  return (
-    <div className="relative z-30" ref={rootRef}>
-      <button
-        type="button"
-        onClick={() => setOpen((prev) => !prev)}
-        className={`w-full flex items-center justify-between gap-3 rounded-2xl px-4 py-3 text-left transition-colors ${
-          theme === 'light'
-            ? 'bg-black/[0.05] hover:bg-black/[0.08]'
-            : 'bg-modrinth-card hover:bg-modrinth-cardHover'
-        } ${compact ? 'py-3' : 'py-3.5'}`}
-      >
-        <div className="min-w-0">
-          <div className="text-sm font-semibold text-modrinth-text">{current.nativeLabel}</div>
-          <div className="text-[11px] uppercase tracking-[0.14em] text-modrinth-muted">{current.label}</div>
-        </div>
-        <ChevronDown size={16} className={`shrink-0 text-modrinth-muted transition-transform ${open ? 'rotate-180' : ''}`} />
-      </button>
-      {open && (
-        <div
-          className={`absolute left-0 right-0 top-[calc(100%+0.5rem)] z-[80] rounded-2xl p-2 shadow-[0_14px_34px_rgba(0,0,0,0.34)] ${
-            theme === 'light'
-              ? 'bg-white'
-              : 'bg-modrinth-card'
-          } animate-fade-in-up`}
-        >
-          {LANGUAGE_OPTIONS.map((option) => {
-            const active = option.code === value;
-            return (
-              <button
-                key={option.code}
-                type="button"
-                onClick={() => {
-                  onChange(option.code);
-                  setOpen(false);
-                }}
-                className={`w-full flex items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-left transition-colors ${
-                  active
-                    ? 'bg-modrinth-green/14 text-modrinth-green'
-                    : theme === 'light'
-                      ? 'text-black/70 hover:bg-black/[0.05]'
-                      : 'text-modrinth-text hover:bg-modrinth-cardHover'
-                }`}
-              >
-                <div className="min-w-0">
-                  <div className="text-sm font-medium">{option.nativeLabel}</div>
-                  <div className="text-[11px] uppercase tracking-[0.12em] opacity-70">{option.label}</div>
-                </div>
-                {active ? <Check size={14} /> : <span className="w-[14px]" />}
-              </button>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-};
-
-// --- Components ---
-
-const WelcomeSetup: React.FC<{ onComplete: () => void }> = ({ onComplete }) => {
-  const { t, language, setLanguage } = useSettings();
-  return (
-    <div className="fixed inset-0 z-[200] bg-modrinth-bg flex flex-col items-center justify-center p-6 text-center animate-fade-in">
-      <div className="w-full max-w-sm flex-1 flex flex-col items-center justify-center">
-        <div className="bg-modrinth-card/75 backdrop-blur-xl w-32 h-32 rounded-3xl flex items-center justify-center mb-10 shadow-[0_12px_30px_rgba(0,0,0,0.3)]">
-          <ModrinthLogo className="w-16 h-16" />
-        </div>
-
-        <h2 className="text-3xl font-bold text-modrinth-text mb-3 animate-fade-in-up">{t('welcome_title')}</h2>
-        <p className="text-modrinth-muted mb-10 animate-fade-in-up" style={{ animationDelay: '0.1s' }}>{t('welcome_subtitle')}</p>
-
-        <div className="w-full bg-modrinth-card/75 backdrop-blur-xl p-4 rounded-3xl shadow-[0_10px_26px_rgba(0,0,0,0.22)] overflow-visible">
-          <div className="text-modrinth-green font-bold text-sm uppercase mb-3">{t('choose_language')}</div>
-          <LanguageSelect value={language} onChange={setLanguage} />
-        </div>
-      </div>
-
-      <button
-        type="button"
-        onClick={onComplete}
-        className="w-full max-w-sm bg-modrinth-green text-white font-bold py-4 rounded-2xl active:scale-[0.98] flex items-center justify-center gap-2 shadow-lg shadow-modrinth-green/20"
-      >
-        {t('continue')} <ChevronRight size={20} />
-      </button>
-    </div>
-  );
-};
-
-const Onboarding: React.FC<{ onComplete: () => void }> = ({ onComplete }) => {
-  const [step, setStep] = useState(0);
-  const { t, theme, language } = useSettings();
-  const steps = [
-    {
-      icon: <ModrinthLogo className="w-16 h-16 text-modrinth-green" />,
-      title: t('onboarding_title'),
-      desc: t('onboarding_desc')
-    },
-    {
-      icon: <ShieldCheck size={56} className="text-modrinth-green" />,
-      title: t('onboarding_secure_title'),
-      desc: t('onboarding_secure_desc')
-    },
-    {
-      icon: <Key size={56} className="text-modrinth-green" />,
-      title: t('onboarding_access_title'),
-      desc: t('onboarding_access_desc')
-    }
-  ];
-
-  return (
-    <div className="fixed inset-0 z-[200] bg-modrinth-bg flex flex-col items-center justify-center p-6 text-center animate-fade-in">
-      <div className="w-full max-w-sm flex-1 flex flex-col items-center justify-center">
-        <div className="bg-modrinth-card/75 backdrop-blur-xl w-32 h-32 rounded-3xl flex items-center justify-center mb-10 shadow-[0_12px_30px_rgba(0,0,0,0.3)] animate-pulse-slow">
-          {steps[step].icon}
-        </div>
-        <h2 className="text-3xl font-bold text-modrinth-text mb-4 animate-fade-in-up">{steps[step].title}</h2>
-        <p className="text-modrinth-muted mb-10 animate-fade-in-up" style={{ animationDelay: '0.1s' }}>{steps[step].desc}</p>
-        <div className="flex gap-3 mb-8">
-          {steps.map((_, i) => (
-            <div key={i} className={`h-2 rounded-full transition-all duration-500 ${i === step ? 'w-10 bg-modrinth-green' : 'w-2 bg-zinc-700'}`} />
-          ))}
-        </div>
-      </div>
-      <button onClick={() => step < steps.length - 1 ? setStep(step + 1) : onComplete()} className="w-full max-w-sm bg-modrinth-green text-white font-bold py-4 rounded-2xl active:scale-[0.98] flex items-center justify-center gap-2 shadow-lg shadow-modrinth-green/20">
-        {step === steps.length - 1 ? t('start') : t('next')} <ChevronRight size={20} />
-      </button>
-    </div>
-  );
-};
-
-const LoginScreen: React.FC<{ onLogin: (token: string) => void; onStartOAuth: () => void; isLoading: boolean; error: string | null; onShowHelp: () => void; savedToken?: string | null }> = ({ onLogin, onStartOAuth, isLoading, error, onShowHelp, savedToken }) => {
-  const [tokenInput, setTokenInput] = useState(savedToken || '');
-  const [showPatLogin, setShowPatLogin] = useState(false);
-
-  useEffect(() => {
-    if (!tokenInput && savedToken) {
-      setTokenInput(savedToken);
-    }
-  }, [savedToken, tokenInput]);
-  const { t, theme, language } = useSettings();
-  return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-modrinth-bg p-6 relative overflow-hidden">
-      <div className="w-full max-w-xs animate-fade-in-up relative z-10">
-        <div className="flex justify-center mb-8">
-           <div className="bg-modrinth-card/75 backdrop-blur-xl p-5 rounded-3xl shadow-[0_12px_30px_rgba(0,0,0,0.35)]">
-              <ModrinthLogo className="w-16 h-16 text-modrinth-green" />
-           </div>
-        </div>
-        <h1 className="text-3xl font-bold text-center text-modrinth-text mb-2">{t('login_title')}</h1>
-        <p className="text-modrinth-muted text-center text-sm mb-8">{t('login_subtitle')}</p>
-        <div className="space-y-4">
-          {error && <div className="text-red-400 text-sm text-center bg-red-500/10 p-3 rounded-xl border border-red-500/20">{error}</div>}
-          <button onClick={onStartOAuth} disabled={isLoading} className="w-full bg-modrinth-green text-white font-bold py-4 rounded-2xl active:scale-[0.98] flex items-center justify-center gap-2 shadow-lg shadow-modrinth-green/20">
-            {isLoading ? <Loader2 className="animate-spin" /> : <Globe size={18} />}
-            {isLoading ? t('oauth_loading') : t('oauth_continue')}
-          </button>
-          <button
-            onClick={() => setShowPatLogin(prev => !prev)}
-            className="w-full text-xs text-center text-modrinth-muted hover:text-modrinth-green underline decoration-dotted"
-          >
-            {showPatLogin ? t('hide_pat') : t('use_pat_instead')}
-          </button>
-          {showPatLogin && (
-            <div className="space-y-3 pt-2">
-              <div className="bg-modrinth-card/75 backdrop-blur-xl p-1 rounded-2xl shadow-[0_10px_26px_rgba(0,0,0,0.25)]">
-                <input type="password" value={tokenInput} onChange={(e) => setTokenInput(e.target.value)} placeholder="mrp_..." className="w-full bg-transparent text-modrinth-text p-4 outline-none text-center font-mono" />
-              </div>
-              <button onClick={() => onLogin(tokenInput)} disabled={isLoading || !tokenInput} className="w-full bg-modrinth-card text-modrinth-text font-bold py-4 rounded-2xl active:scale-[0.98] flex items-center justify-center border border-modrinth-border">
-                {isLoading ? <Loader2 className="animate-spin" /> : t('authorize')}
-              </button>
-              <button onClick={onShowHelp} className="w-full text-xs text-center text-modrinth-muted hover:text-modrinth-green underline decoration-dotted">{t('how_to_get_token')}</button>
-            </div>
-          )}
-        </div>
-      </div>
-      <div className="absolute bottom-6 text-[10px] text-modrinth-muted text-center w-full">
-        Unofficial app for Modrinth. Not affiliated with or endorsed by Modrinth. by <a href="https://modrinth.com/user/imsawiq" className="font-bold text-modrinth-green">imsawiq</a>
-      </div>
-    </div>
-  );
-};
-
-const TokenHelpModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
-  const { t, theme } = useSettings();
-
-  return (
-    <div className="fixed inset-0 z-[200] bg-black/80 backdrop-blur-sm flex items-center justify-center p-6 animate-fade-in" onClick={onClose}>
-      <div className="bg-modrinth-card p-6 rounded-2xl max-w-md w-full border border-modrinth-border" onClick={e => e.stopPropagation()}>
-        <h3 className="text-xl font-bold text-modrinth-text mb-4">{t('token_help_title')}</h3>
-        <ol className="list-decimal list-inside space-y-2 text-modrinth-muted text-sm mb-6">
-          <li>{t('token_help_open')} <a className="text-modrinth-green hover:underline font-bold" href="https://modrinth.com/settings/pats" target="_blank" rel="noreferrer">https://modrinth.com/settings/pats</a></li>
-          <li>{t('token_help_create')}</li>
-          <li>{t('token_help_scopes')}</li>
-          <li>{t('token_help_paste')}</li>
-          <li>{t('token_help_local')}</li>
-        </ol>
-        <button onClick={onClose} className="w-full bg-modrinth-green text-white font-bold py-3 rounded-xl">{t('got_it')}</button>
-      </div>
-    </div>
-  );
+  return { visible, closing, requestClose };
 };
 
 // --- Update Modal ---
 const UpdateModal: React.FC<{ release: GitHubRelease; onClose: () => void }> = ({ release, onClose }) => {
-  const { t, theme } = useSettings();
+  const { t } = useSettings();
+  const { closing, requestClose } = useAnimatedDismiss(true, onClose);
   const version = release.tag_name.replace(/^v/, '');
   const apkAsset = findApkAsset(release);
   const downloadUrl = apkAsset?.browser_download_url || release.html_url;
 
-  const overlayClass = theme === 'light' ? 'bg-black/40' : 'bg-black/60';
-  const modalClass = theme === 'light'
-    ? 'bg-white/95 border border-black/10 shadow-[0_14px_36px_rgba(0,0,0,0.2)]'
-    : 'bg-modrinth-card/95 shadow-[0_14px_36px_rgba(0,0,0,0.5)]';
-
   return (
-    <div className={`fixed inset-0 z-[250] ${overlayClass} backdrop-blur-md flex items-center justify-center p-6 animate-fade-in`} onClick={onClose}>
-      <div className={`${modalClass} backdrop-blur-xl w-full max-w-sm rounded-3xl overflow-hidden animate-scale-in`} onClick={e => e.stopPropagation()}>
-        {/* Header with gradient */}
-        <div className="bg-gradient-to-br from-modrinth-green/20 via-modrinth-green/10 to-transparent p-6 text-center">
-          <div className="w-16 h-16 mx-auto mb-4 bg-modrinth-green/20 rounded-2xl flex items-center justify-center">
-            <Download size={32} className="text-modrinth-green" />
-          </div>
-          <h3 className="text-xl font-bold text-modrinth-text mb-1">{t('update_available')}</h3>
-          <div className="flex items-center justify-center gap-3 text-sm">
-            <span className="text-modrinth-muted">{APP_VERSION}</span>
-            <ChevronRight size={16} className="text-modrinth-green" />
-            <span className="text-modrinth-green font-bold">{version}</span>
+    <div data-closing={closing ? 'true' : undefined} className="app-overlay fixed inset-0 z-[250] flex items-end justify-center p-4 sm:items-center sm:p-6" onClick={requestClose}>
+      <div className="app-responsive-sheet flex w-full max-w-sm flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+        <div className="border-b border-modrinth-border px-5 py-4">
+          <div className="flex items-start gap-3">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-modrinth-green/12 text-modrinth-green">
+              <Download size={20} />
+            </div>
+            <div className="min-w-0 flex-1">
+              <h3 className="text-lg font-black text-modrinth-text">{t('update_available')}</h3>
+              <div className="mt-1 flex min-w-0 items-center gap-2 text-sm">
+                <span className="font-bold text-modrinth-muted">{APP_VERSION}</span>
+                <ChevronRight size={15} className="shrink-0 text-modrinth-green" />
+                <span className="min-w-0 truncate font-black text-modrinth-green">{version}</span>
+              </div>
+            </div>
+            <button type="button" onClick={requestClose} className="app-close-button h-9 w-9 shrink-0">
+              <X size={18} />
+            </button>
           </div>
         </div>
 
-        {/* Release notes */}
         {release.body && (
-          <div className="px-6 py-4 border-t border-modrinth-border/50">
-            <h4 className="text-xs font-bold text-modrinth-muted uppercase mb-2">{t('update_whats_new')}</h4>
-            <div className="text-sm text-modrinth-text/80 max-h-32 overflow-y-auto whitespace-pre-wrap leading-relaxed">
+          <div className="min-h-0 px-5 py-4">
+            <h4 className="mb-2 text-[10px] font-black uppercase tracking-[0.16em] text-modrinth-muted">{t('update_whats_new')}</h4>
+            <div className="app-panel-soft max-h-40 overflow-y-auto whitespace-pre-wrap p-3 text-sm leading-relaxed text-modrinth-text">
               {release.body.slice(0, 500)}{release.body.length > 500 ? '...' : ''}
             </div>
           </div>
         )}
 
-        {/* Actions */}
-        <div className="p-4 flex gap-3">
+        <div className="grid grid-cols-2 gap-2 border-t border-modrinth-border px-5 py-4">
           <button
-            onClick={onClose}
-            className={`flex-1 py-3 rounded-2xl font-bold text-sm transition-colors ${
-              theme === 'light' 
-                ? 'bg-black/5 text-black/70 hover:bg-black/10' 
-                : 'bg-modrinth-bg text-modrinth-muted hover:text-modrinth-text'
-            }`}
+            type="button"
+            onClick={requestClose}
+            className="app-command px-3 py-3 text-sm font-extrabold"
           >
             {t('update_later')}
           </button>
@@ -611,7 +320,7 @@ const UpdateModal: React.FC<{ release: GitHubRelease; onClose: () => void }> = (
             href={downloadUrl}
             target="_blank"
             rel="noreferrer"
-            className="flex-1 py-3 rounded-2xl font-bold text-sm bg-modrinth-green text-white text-center flex items-center justify-center gap-2 active:scale-[0.98] transition-transform disabled:opacity-70"
+            className="app-primary flex items-center justify-center gap-2 px-3 py-3 text-sm"
           >
             <Download size={16} /> {t('update_download')}
           </a>
@@ -627,21 +336,30 @@ const NotificationsModal: React.FC<{ isOpen: boolean; onClose: () => void; user:
     const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
     const [loading, setLoading] = useState(true);
     const [pendingReadIds, setPendingReadIds] = useState<Set<string>>(() => new Set());
-    const { t, theme, language } = useSettings();
+    const { t, language } = useSettings();
+    const { visible, closing, requestClose } = useAnimatedDismiss(isOpen, onClose);
 
     useEffect(() => {
-        if(isOpen) {
-            setLoading(true);
-            // Explicitly fetch unread and force filter on client side to avoid ghosts from cache
-            fetchNotifications(user.id, token, 'unread')
-                .then(data => {
-                  const unread = data.filter(n => !n.read);
-                  setNotifs(unread);
-                  onUnreadCountChange?.(unread.length);
-                })
-                .catch(console.error)
-                .finally(() => setLoading(false));
-        }
+        if (!isOpen) return;
+        let cancelled = false;
+        setLoading(true);
+        // Explicitly fetch unread and force filter on client side to avoid ghosts from cache.
+        fetchNotifications(user.id, token, 'unread')
+            .then(data => {
+              if (cancelled) return;
+              const unread = data.filter(n => !n.read);
+              setNotifs(unread);
+              onUnreadCountChange?.(unread.length);
+            })
+            .catch((error) => {
+              if (!cancelled) console.error(error);
+            })
+            .finally(() => {
+              if (!cancelled) setLoading(false);
+            });
+        return () => {
+          cancelled = true;
+        };
     }, [isOpen, user.id, token, onUnreadCountChange]);
 
     useEffect(() => {
@@ -891,41 +609,54 @@ const NotificationsModal: React.FC<{ isOpen: boolean; onClose: () => void; user:
         }
     };
 
-    if (!isOpen) return null;
+    const handleNotificationAction = async (notif: ResolvedNotification, actionRoute?: [string, string] | string[]) => {
+        if (!actionRoute || pendingReadIds.has(notif.id)) return;
+        try {
+            setPendingReadIds((prev) => new Set(prev).add(notif.id));
+            await runNotificationAction(actionRoute, token);
+            removeUnreadNotifications([notif.id]);
+            await markNotificationRead(notif.id, token);
+        } catch (e: any) {
+            alert(e.message || 'Failed to run notification action');
+            console.error(e);
+        } finally {
+            setPendingReadIds((prev) => {
+                const next = new Set(prev);
+                next.delete(notif.id);
+                return next;
+            });
+        }
+    };
 
-    const overlayClass = theme === 'light' ? 'bg-black/40' : 'bg-black/60';
-    const modalClass = theme === 'light'
-      ? 'bg-white/95 border border-black/10 shadow-[0_14px_36px_rgba(0,0,0,0.2)]'
-      : 'bg-modrinth-card/90 shadow-[0_14px_36px_rgba(0,0,0,0.4)]';
-    const cardClass = theme === 'light'
-      ? 'bg-black/[0.04] border border-black/10'
-      : 'bg-modrinth-bg/60';
-    const readAllClass = theme === 'light'
-      ? 'bg-black/[0.06] hover:bg-black/10 text-modrinth-green border border-black/10'
-      : 'bg-modrinth-bg hover:bg-modrinth-cardHover text-modrinth-green';
+    if (!visible) return null;
 
     return (
-        <div className={`fixed inset-0 z-[200] ${overlayClass} backdrop-blur-sm flex items-center justify-center px-4 sm:p-4 animate-fade-in pt-safe`}>
-			<div className={`${modalClass} backdrop-blur-xl w-full max-w-md rounded-3xl animate-scale-in max-h-[75vh] sm:max-h-[80vh] flex flex-col overflow-hidden relative`}>
-                <div className="p-5 flex justify-between items-center bg-transparent rounded-t-3xl relative">
-                    <h3 className="text-lg font-bold text-modrinth-text flex items-center gap-2">
-                        <Bell className="text-modrinth-green" size={20} /> {t('notifications')}
-                    </h3>
-                    <div className="flex items-center gap-2">
+        <div data-closing={closing ? 'true' : undefined} className="app-overlay fixed inset-0 z-[220] flex items-end justify-center p-3 pt-safe sm:items-center sm:p-4" onClick={requestClose}>
+			<div className="app-responsive-sheet flex h-[min(86dvh,760px)] w-full max-w-md flex-col overflow-hidden sm:h-[min(82dvh,760px)]" onClick={(event) => event.stopPropagation()}>
+                <div className="relative flex shrink-0 items-center justify-between gap-3 border-b border-modrinth-border px-5 py-4">
+                    <div className="min-w-0">
+                        <h3 className="flex items-center gap-2 text-lg font-extrabold text-modrinth-text">
+                            <Bell className="shrink-0 text-modrinth-green" size={20} />
+                            <span className="truncate">{t('notifications')}</span>
+                        </h3>
+                        <p className="mt-0.5 text-xs text-modrinth-muted">{notifs.length.toLocaleString()} unread</p>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
                         {notifs.length > 0 && (
-                            <button onClick={handleReadAll} className={`${readAllClass} text-xs font-bold px-3 py-1.5 rounded-full transition-colors flex items-center gap-1`}>
-                                <CheckCheck size={14}/> {t('read_all')}
+                            <button onClick={handleReadAll} disabled={loading} className="flex h-9 items-center gap-1 rounded-lg bg-modrinth-green/12 px-3 text-xs font-extrabold text-modrinth-green transition-colors hover:bg-modrinth-green/18 disabled:opacity-50">
+                                <CheckCheck size={14}/> <span>{t('read_all')}</span>
                             </button>
                         )}
-                        <button onClick={onClose} className="p-2 rounded-full hover:bg-modrinth-cardHover text-modrinth-muted hover:text-modrinth-text transition-colors">
-                        <X size={18} /></button>
+                        <button onClick={requestClose} className="app-close-button h-9 w-9">
+                          <X size={18} />
+                        </button>
                     </div>
                 </div>
-                <div className="flex-1 overflow-y-auto p-4 space-y-3 relative">
+                <div className="relative min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain px-4 py-3 sm:px-5 sm:py-4">
                     {loading && <div className="flex justify-center p-10"><Loader2 className="animate-spin text-modrinth-green" /></div>}
                     {!loading && notifs.length === 0 && (
                         <div className="text-center py-20 text-modrinth-muted flex flex-col items-center">
-                            <div className={`${cardClass} p-4 rounded-full mb-3 opacity-50`}><Bell size={32} /></div>
+                            <div className="mb-3 rounded-lg bg-modrinth-bg p-4 opacity-70"><Bell size={32} /></div>
                             <p>{t('no_notifications')}</p>
                         </div>
                     )}
@@ -934,67 +665,82 @@ const NotificationsModal: React.FC<{ isOpen: boolean; onClose: () => void; user:
                         const expanded = expandedGroups[group.key] ?? group.items.length <= 1;
                         const receivedLabel = formatNotificationRelativeTime(primary.created, language);
                         const groupActionIds = group.items.map((item) => item.id);
+                        const groupTitle =
+                          group.entityKind === 'project' && group.entityTitle
+                            ? group.entityTitle
+                            : group.entityTitle || primary.displayTitle;
+                        const groupSubtitle =
+                          group.entityKind === 'project'
+                            ? t('project_updated_group')
+                            : primary.displayText;
 
                         return (
-                            <div key={group.key} className={`${cardClass} p-4 rounded-3xl relative overflow-hidden`}>
+                            <div key={group.key} className="app-panel-soft relative overflow-hidden p-3 sm:p-4">
                                 <div className="flex gap-3">
                                     {group.entityIconUrl ? (
-                                        <img src={group.entityIconUrl} alt={group.entityTitle || 'Notification'} className="w-11 h-11 rounded-2xl object-cover shadow-[0_8px_20px_rgba(0,0,0,0.25)]" />
+                                        <img src={group.entityIconUrl} alt={group.entityTitle || 'Notification'} className="h-11 w-11 shrink-0 rounded-lg object-cover" />
                                     ) : (
-                                        <div className="w-11 h-11 rounded-2xl bg-modrinth-cardHover text-modrinth-green flex items-center justify-center shadow-[0_8px_20px_rgba(0,0,0,0.18)]">
+                                        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-modrinth-cardHover text-modrinth-green">
                                             <Package size={18} />
                                         </div>
                                     )}
-                                    <div className="flex-1 min-w-0">
+                                    <div className="min-w-0 flex-1">
                                         <div className="flex items-start justify-between gap-2">
                                             <div className="min-w-0">
-                                                <p className="text-[11px] uppercase tracking-[0.14em] text-modrinth-muted/80 mb-1">{t('notifications')}</p>
-                                                <h4 className="text-sm font-semibold text-modrinth-text leading-snug">
-                                                    {group.entityKind === 'project' && group.entityTitle ? (
-                                                        <>
-                                                            {t('project_updated_group')}: <span className="font-bold">{group.entityTitle}</span>
-                                                        </>
-                                                    ) : primary.displayTitle}
-                                                </h4>
+                                                <p className="mb-1 text-[10px] font-extrabold uppercase tracking-[0.14em] text-modrinth-muted/80">{group.entityKind}</p>
+                                                <h4 className="break-words text-sm font-extrabold leading-snug text-modrinth-text">{groupTitle}</h4>
                                             </div>
                                             {group.items.length > 1 && (
                                                 <button
                                                     onClick={() => setExpandedGroups((prev) => ({ ...prev, [group.key]: !expanded }))}
-                                                    className="text-modrinth-muted hover:text-modrinth-text transition-colors p-1 rounded-full hover:bg-modrinth-cardHover"
+                                                    className="text-modrinth-muted hover:text-modrinth-text transition-colors p-1 rounded-lg hover:bg-modrinth-cardHover"
                                                 >
                                                     <ChevronDown size={18} className={`transition-transform ${expanded ? 'rotate-180' : ''}`} />
                                                 </button>
                                             )}
                                         </div>
-                                        {group.entityKind !== 'project' && (
-                                            <p className="text-xs text-modrinth-muted leading-relaxed mt-2">{primary.displayText}</p>
-                                        )}
+                                        {groupSubtitle && <p className="mt-2 line-clamp-2 break-words text-xs leading-relaxed text-modrinth-muted">{groupSubtitle}</p>}
                                     </div>
                                 </div>
 
                                 <div className="mt-3 space-y-2">
                                     {(expanded ? group.items : group.items.slice(0, 1)).map((item) => (
-                                        <div key={item.id} className={`rounded-2xl px-3 py-2.5 ${theme === 'light' ? 'bg-white/70 border border-black/[0.08]' : 'bg-modrinth-card/70'}`}>
+                                        <div key={item.id} className="rounded-lg bg-modrinth-cardHover/60 px-3 py-2.5">
                                             <div className="flex items-start justify-between gap-3">
                                                 <div className="min-w-0 flex-1">
                                                     <div className="text-sm text-modrinth-text leading-snug break-words">
-                                                        <span className="font-medium text-modrinth-green">{item.versionLabel || item.displayTitle}</span>
+                                                        <span className="font-bold text-modrinth-green">{item.versionLabel || item.displayTitle}</span>
                                                         {item.versionLabel && item.displayText ? <span className="text-modrinth-muted"> {item.displayText}</span> : null}
                                                     </div>
                                                     <div className="mt-1 flex items-center gap-3 text-[11px] text-modrinth-muted/80">
                                                         <span>{formatNotificationRelativeTime(item.created, language)}</span>
-                                                        {item.link && (
-                                                            <a href={`https://modrinth.com${item.link}`} target="_blank" rel="noreferrer" className="text-modrinth-green hover:underline flex items-center gap-1 truncate">
+                                                        {getModrinthLink(item.link) && (
+                                                            <a href={getModrinthLink(item.link) || undefined} target="_blank" rel="noreferrer" className="text-modrinth-green hover:underline flex items-center gap-1 truncate">
                                                                 View <ExternalLink size={10}/>
                                                             </a>
                                                         )}
                                                     </div>
+                                                    {item.actions && item.actions.length > 0 && (
+                                                        <div className="mt-2 flex flex-wrap gap-2">
+                                                            {item.actions.map((action, actionIndex) => (
+                                                                <button
+                                                                    key={`${item.id}-action-${actionIndex}`}
+                                                                    type="button"
+                                                                    onClick={() => handleNotificationAction(item, action.action_route)}
+                                                                    disabled={!action.action_route || pendingReadIds.has(item.id)}
+                                                                    className="rounded-lg bg-modrinth-green/12 px-3 py-1.5 text-[11px] font-extrabold text-modrinth-green transition-colors hover:bg-modrinth-green/18 disabled:opacity-50"
+                                                                >
+                                                                    {action.title || t('accept_invite')}
+                                                                </button>
+                                                            ))}
+                                                        </div>
+                                                    )}
                                                 </div>
                                                 {group.items.length === 1 && (
                                                     <button
                                                         onClick={() => handleRead(item.id)}
                                                         disabled={pendingReadIds.has(item.id)}
-                                                        className="relative text-modrinth-green hover:bg-modrinth-green/10 self-start p-1.5 rounded-full transition-colors disabled:opacity-50 disabled:pointer-events-none"
+                                                        className="relative text-modrinth-green hover:bg-modrinth-cardHover self-start p-1.5 rounded-lg transition-colors disabled:opacity-50 disabled:pointer-events-none"
                                                     >
                                                         <Check size={16}/>
                                                     </button>
@@ -1007,25 +753,17 @@ const NotificationsModal: React.FC<{ isOpen: boolean; onClose: () => void; user:
                                 {group.items.length > 1 && (
                                     <button
                                         onClick={() => setExpandedGroups((prev) => ({ ...prev, [group.key]: !expanded }))}
-                                        className={`mt-3 text-xs font-bold px-3 py-2 rounded-full transition-colors ${
-                                          theme === 'light'
-                                            ? 'bg-black/[0.05] text-black/70 hover:bg-black/10'
-                                            : 'bg-modrinth-cardHover text-modrinth-muted hover:text-modrinth-text'
-                                        }`}
+                                        className="mt-3 rounded-lg bg-modrinth-cardHover px-3 py-2 text-xs font-bold text-modrinth-muted transition-colors hover:text-modrinth-text"
                                     >
                                         {expanded ? t('hide_versions') : `${t('show_more_versions')} (${group.items.length})`}
                                     </button>
                                 )}
 
-                                <div className="mt-3 flex items-center justify-between gap-3">
+                                <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
                                     <button
                                         onClick={() => handleReadGroup(groupActionIds)}
                                         disabled={groupActionIds.some((id) => pendingReadIds.has(id))}
-                                        className={`text-xs font-bold px-3.5 py-2 rounded-full transition-colors flex items-center gap-1.5 ${
-                                          theme === 'light'
-                                            ? 'bg-black/[0.05] text-black/70 hover:bg-black/10'
-                                            : 'bg-modrinth-cardHover text-modrinth-text hover:bg-modrinth-border/70'
-                                        } disabled:opacity-50 disabled:pointer-events-none`}
+                                        className="flex items-center gap-1.5 rounded-lg bg-modrinth-cardHover px-3.5 py-2 text-xs font-bold text-modrinth-text transition-colors hover:bg-modrinth-border/70 disabled:pointer-events-none disabled:opacity-50"
                                     >
                                         <Check size={14} /> {t('mark_group_as_read')}
                                     </button>
@@ -1042,142 +780,20 @@ const NotificationsModal: React.FC<{ isOpen: boolean; onClose: () => void; user:
     );
 };
 
-type AnalyticsSnapshot = {
-  capturedAt: number;
-  revenueLifetime?: number;
-  projects: Record<string, { downloads: number; followers: number }>;
-};
-
-type WeeklyProjectDelta = {
-  id: string;
-  title: string;
-  icon_url?: string;
-  downloads: number;
-  followers: number;
-};
-
-const normalizeOptionalMetric = (value: number | null | undefined) =>
-  typeof value === 'number' && Number.isFinite(value) ? Math.max(0, value) : undefined;
-
-const createAnalyticsSnapshot = (projects: ModrinthProject[], capturedAt = Date.now(), revenueLifetime?: number | null): AnalyticsSnapshot => ({
-  capturedAt,
-  revenueLifetime: normalizeOptionalMetric(revenueLifetime),
-  projects: projects.reduce<AnalyticsSnapshot['projects']>((acc, project) => {
-    acc[project.id] = {
-      downloads: project.downloads,
-      followers: project.followers
-    };
-    return acc;
-  }, {})
-});
-
-const isAnalyticsSnapshot = (value: unknown): value is AnalyticsSnapshot => {
-  if (!value || typeof value !== 'object') return false;
-  const snapshot = value as AnalyticsSnapshot;
-  const hasValidRevenue = snapshot.revenueLifetime === undefined || typeof snapshot.revenueLifetime === 'number';
-  return typeof snapshot.capturedAt === 'number' && hasValidRevenue && Boolean(snapshot.projects) && typeof snapshot.projects === 'object';
-};
-
-const readAnalyticsSnapshots = (storageKey: string): AnalyticsSnapshot[] => {
-  try {
-    const raw = localStorage.getItem(storageKey);
-    const parsed = raw ? JSON.parse(raw) : [];
-    return Array.isArray(parsed) ? parsed.filter(isAnalyticsSnapshot) : [];
-  } catch {
-    return [];
-  }
-};
-
-const getSnapshotDay = (timestamp: number) => Math.floor(timestamp / DAY_MS);
-
-const compactAnalyticsSnapshots = (snapshots: AnalyticsSnapshot[], now = Date.now()) => {
-  const sorted = snapshots
-    .filter((snapshot) => snapshot.capturedAt <= now)
-    .sort((a, b) => a.capturedAt - b.capturedAt);
-  const cutoff = now - WEEK_MS;
-  const latestBeforeCutoff = [...sorted].reverse().find((snapshot) => snapshot.capturedAt <= cutoff);
-  const latestByDay = new Map<number, AnalyticsSnapshot>();
-
-  for (const snapshot of sorted.filter((item) => item.capturedAt > cutoff)) {
-    latestByDay.set(getSnapshotDay(snapshot.capturedAt), snapshot);
-  }
-
-  return [
-    ...(latestBeforeCutoff ? [latestBeforeCutoff] : []),
-    ...Array.from(latestByDay.values())
-  ].sort((a, b) => a.capturedAt - b.capturedAt);
-};
-
-const saveAnalyticsSnapshot = (storageKey: string, snapshot: AnalyticsSnapshot) => {
-  const snapshots = compactAnalyticsSnapshots([...readAnalyticsSnapshots(storageKey), snapshot], snapshot.capturedAt);
-  localStorage.setItem(storageKey, JSON.stringify(snapshots));
-};
-
-const calculateWeeklySummary = (projects: ModrinthProject[], snapshots: AnalyticsSnapshot[], revenueLifetime: number | null, now = Date.now()) => {
-  const currentSnapshot = createAnalyticsSnapshot(projects, now, revenueLifetime);
-  const retainedSnapshots = compactAnalyticsSnapshots([...snapshots, currentSnapshot], now);
-  const baseline =
-    [...retainedSnapshots].reverse().find((snapshot) => snapshot.capturedAt <= now - WEEK_MS) ??
-    retainedSnapshots[0] ??
-    currentSnapshot;
-
-  const projectDeltas: WeeklyProjectDelta[] = projects.map(project => {
-    const previous = baseline.projects[project.id];
-    return {
-      id: project.id,
-      title: project.title,
-      icon_url: project.icon_url,
-      downloads: Math.max(0, project.downloads - (previous?.downloads ?? project.downloads)),
-      followers: Math.max(0, project.followers - (previous?.followers ?? project.followers))
-    };
-  });
-
-  const downloads = projectDeltas.reduce((acc, project) => acc + project.downloads, 0);
-  const followers = projectDeltas.reduce((acc, project) => acc + project.followers, 0);
-  const revenue =
-    currentSnapshot.revenueLifetime !== undefined && baseline.revenueLifetime !== undefined
-      ? Math.max(0, currentSnapshot.revenueLifetime - baseline.revenueLifetime)
-      : null;
-  const activeProjects = projectDeltas.filter(project => project.downloads > 0 || project.followers > 0).length;
-  const topProject = [...projectDeltas].sort((a, b) => (b.downloads + b.followers) - (a.downloads + a.followers))[0] ?? null;
-  const daysTracked = Math.min(7, Math.max(1, Math.ceil((now - baseline.capturedAt) / DAY_MS)));
-
-  return {
-    downloads,
-    followers,
-    revenue,
-    activeProjects,
-    topProject,
-    daysTracked,
-    isBaselineReady: baseline !== currentSnapshot && now - baseline.capturedAt >= DAY_MS
-  };
-};
-
-const getFavoriteProjectsKey = (userId: string) => `${FAVORITE_PROJECTS_KEY_PREFIX}_${userId}`;
-
-const readFavoriteProjectIds = (userId: string) => {
-  try {
-    const raw = localStorage.getItem(getFavoriteProjectsKey(userId));
-    const parsed = raw ? JSON.parse(raw) : [];
-    return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === 'string') : [];
-  } catch {
-    return [];
-  }
-};
-
-const saveFavoriteProjectIds = (userId: string, ids: string[]) => {
-  localStorage.setItem(getFavoriteProjectsKey(userId), JSON.stringify(ids));
-};
-
 const Dashboard: React.FC<{ user: ModrinthUser; token: string }> = ({ user, token }) => {
   const [projects, setProjects] = useState<ModrinthProject[]>([]);
+  const [organizations, setOrganizations] = useState<ModrinthOrganization[]>([]);
   const [sortMode, setSortMode] = useState<ProjectSortMode>(() => getStoredProjectSortMode());
   const [showSortMenu, setShowSortMenu] = useState(false);
   const [loading, setLoading] = useState(true);
   const [showNotifs, setShowNotifs] = useState(false);
+  const [showCreateProject, setShowCreateProject] = useState(false);
+  const [deleteCandidate, setDeleteCandidate] = useState<ModrinthProject | null>(null);
+  const [deletingProjectId, setDeletingProjectId] = useState<string | null>(null);
   const [unreadCount, setUnreadCount] = useState(0);
   const [favoriteProjectIds, setFavoriteProjectIds] = useState<string[]>(() => readFavoriteProjectIds(user.id));
   const sortMenuRef = useRef<HTMLDivElement | null>(null);
+  const dashboardMountedRef = useRef(true);
   const navigate = useNavigate();
   const { t, theme, language, showFavoriteProjects } = useSettings();
 
@@ -1190,6 +806,14 @@ const Dashboard: React.FC<{ user: ModrinthUser; token: string }> = ({ user, toke
     () => showFavoriteProjects ? projects.filter((project) => favoriteProjectIdSet.has(project.id)).length : 0,
     [projects, favoriteProjectIdSet, showFavoriteProjects]
   );
+  const organizationNameByKey = useMemo(() => {
+    const map = new Map<string, string>();
+    organizations.forEach((organization) => {
+      map.set(organization.id, organization.name);
+      map.set(organization.slug, organization.name);
+    });
+    return map;
+  }, [organizations]);
 
   const sortedProjects = useMemo(() => {
     const sorted = sortProjectsByMode(projects, sortMode);
@@ -1204,20 +828,51 @@ const Dashboard: React.FC<{ user: ModrinthUser; token: string }> = ({ user, toke
   const loadProjects = useCallback(() => {
     let mounted = true;
     setLoading(true);
-    fetchUserProjects(user.id, token)
-      .then(data => {
+    const run = async () => {
+      try {
+        const userProjects = await fetchUserProjects(user.id, token);
+        const userOrganizations = await fetchUserOrganizations(user.id, token);
+        const organizationKeys = Array.from(new Set([
+          ...userOrganizations.map((organization) => organization.id),
+          ...userProjects.map((project) => project.organization_id || project.organization).filter(Boolean),
+        ])) as string[];
+        const organizationProjectGroups = await Promise.all(
+          organizationKeys.map(async (organizationKey) => {
+            try {
+              return await fetchOrganizationProjects(organizationKey, token);
+            } catch {
+              return [] as ModrinthProject[];
+            }
+          })
+        );
+        const byId = new Map<string, ModrinthProject>();
+        [...userProjects, ...organizationProjectGroups.flat()].forEach((project) => byId.set(project.id, project));
         if (mounted) {
-          setProjects(data);
+          setOrganizations(userOrganizations);
+          setProjects(Array.from(byId.values()));
         }
-      })
-      .catch(console.error)
-      .finally(() => {
+      } catch (error) {
+        console.error(error);
+        if (mounted) {
+          setOrganizations([]);
+          setProjects([]);
+        }
+      } finally {
         if (mounted) setLoading(false);
-      });
+      }
+    };
+    run();
     return () => {
       mounted = false;
     };
   }, [user.id, token]);
+
+  useEffect(() => {
+    dashboardMountedRef.current = true;
+    return () => {
+      dashboardMountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     const cleanup = loadProjects();
@@ -1226,7 +881,9 @@ const Dashboard: React.FC<{ user: ModrinthUser; token: string }> = ({ user, toke
 
   const refreshUnread = useCallback(() => {
     fetchNotifications(user.id, token, 'unread')
-      .then(data => setUnreadCount(data.filter(n => !n.read).length))
+      .then(data => {
+        if (dashboardMountedRef.current) setUnreadCount(data.filter(n => !n.read).length);
+      })
       .catch(() => {});
   }, [user.id, token]);
 
@@ -1237,7 +894,7 @@ const Dashboard: React.FC<{ user: ModrinthUser; token: string }> = ({ user, toke
   const handleChangeSortMode = (mode: ProjectSortMode) => {
     setSortMode(mode);
     setShowSortMenu(false);
-    localStorage.setItem(PROJECT_SORT_KEY, mode);
+    saveProjectSortMode(mode);
   };
 
   const handleToggleFavoriteProject = useCallback((projectId: string) => {
@@ -1249,6 +906,27 @@ const Dashboard: React.FC<{ user: ModrinthUser; token: string }> = ({ user, toke
       return next;
     });
   }, [user.id]);
+
+  const handleConfirmDeleteProject = async () => {
+    if (!deleteCandidate) return;
+
+    setDeletingProjectId(deleteCandidate.id);
+    try {
+      await deleteProject(deleteCandidate.id, token);
+      setProjects((prev) => prev.filter((project) => project.id !== deleteCandidate.id));
+      setFavoriteProjectIds((prev) => {
+        const next = prev.filter((id) => id !== deleteCandidate.id);
+        saveFavoriteProjectIds(user.id, next);
+        return next;
+      });
+      showToast(t('project_deleted'));
+      setDeleteCandidate(null);
+    } catch (error: any) {
+      showToast(error?.message || 'Failed to delete project', 'error');
+    } finally {
+      setDeletingProjectId(null);
+    }
+  };
 
   useEffect(() => {
     if (!showSortMenu) return;
@@ -1268,7 +946,7 @@ const Dashboard: React.FC<{ user: ModrinthUser; token: string }> = ({ user, toke
 
   return (
     <div className="pb-4 px-4 animate-fade-in">
-      <header className="flex justify-between items-center mb-6 sticky top-0 z-50 backdrop-blur-xl pt-[calc(env(safe-area-inset-top)+0.85rem)] pb-3 -mx-4 px-4 min-h-[84px] shadow-[0_8px_24px_rgba(0,0,0,0.35)] overflow-hidden relative transition-colors duration-300" style={{ backgroundColor: 'rgba(var(--card-rgb), 0.7)' }}>
+      <header className="app-topbar flex justify-between items-center mb-5 sticky top-0 z-50 pt-[calc(env(safe-area-inset-top)+0.85rem)] pb-3 -mx-4 px-4 min-h-[82px] overflow-hidden relative transition-colors duration-300">
         <div className="flex flex-col gap-1">
           <h1 className="text-2xl font-bold text-modrinth-text leading-none">{t('dashboard')}</h1>
           <p className="text-modrinth-muted text-xs font-medium">{t('dev_panel')}</p>
@@ -1285,6 +963,14 @@ const Dashboard: React.FC<{ user: ModrinthUser; token: string }> = ({ user, toke
                <path d="M20.317 4.369a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.078.037 13.709 13.709 0 0 0-.608 1.249 18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.249.077.077 0 0 0-.079-.037 19.736 19.736 0 0 0-4.885 1.515.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.056 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028 14.13 14.13 0 0 0 1.226-1.994.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128c.126-.094.252-.192.372-.291a.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.061 0a.074.074 0 0 1 .078.009c.12.099.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.04.107 15.228 15.228 0 0 0 1.225 1.993.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.055c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03ZM8.02 15.331c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.418 2.157-2.418 1.211 0 2.176 1.094 2.157 2.418 0 1.334-.955 2.419-2.157 2.419Zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.418 2.157-2.418 1.211 0 2.176 1.094 2.157 2.418 0 1.334-.946 2.419-2.157 2.419Z"/>
              </svg>
            </a>
+           <button
+             type="button"
+             onClick={() => setShowCreateProject(true)}
+             className="p-2 text-modrinth-muted hover:text-modrinth-green transition-colors"
+             aria-label={t('create_project_action')}
+           >
+             <Plus size={20} />
+           </button>
            <button
              onClick={() => loadProjects()}
              className="p-2 text-modrinth-muted hover:text-modrinth-green transition-colors"
@@ -1305,7 +991,7 @@ const Dashboard: React.FC<{ user: ModrinthUser; token: string }> = ({ user, toke
       </header>
       {loading ? <div className="flex justify-center pt-40"><Loader2 className="animate-spin text-modrinth-green w-10 h-10" /></div> : (
         <div className="space-y-1 pb-20">
-          <div className="mb-1 flex items-center justify-between px-1" ref={sortMenuRef}>
+          <div className="mb-3 flex items-center justify-between px-1" ref={sortMenuRef}>
             <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.14em] text-modrinth-muted/75">
               <span>{formatProjectsCountLabel(sortedProjects.length, language, t)}</span>
               {showFavoriteProjects && favoriteCount > 0 && (
@@ -1319,10 +1005,10 @@ const Dashboard: React.FC<{ user: ModrinthUser; token: string }> = ({ user, toke
               <button
                 type="button"
                 onClick={() => setShowSortMenu((prev) => !prev)}
-                className={`inline-flex items-center gap-2 rounded-full px-3 py-2 text-xs font-semibold transition-colors ${
+                className={`app-command inline-flex items-center gap-2 px-3 py-2 text-xs font-semibold transition-colors ${
                   theme === 'light'
-                    ? 'bg-white/80 border border-black/10 text-black/70 hover:bg-white'
-                    : 'bg-modrinth-card/80 text-modrinth-muted hover:text-modrinth-text hover:bg-modrinth-cardHover'
+                    ? 'bg-white/80 border-black/10 text-black/70 hover:bg-white'
+                    : ''
                 }`}
               >
                 <Layers size={13} className="text-modrinth-green" />
@@ -1331,11 +1017,11 @@ const Dashboard: React.FC<{ user: ModrinthUser; token: string }> = ({ user, toke
               </button>
               {showSortMenu && (
                 <div
-                  className={`absolute right-0 top-[calc(100%+0.35rem)] z-40 min-w-[220px] rounded-2xl p-2 shadow-[0_14px_34px_rgba(0,0,0,0.34)] ${
+                  className={`absolute right-0 top-[calc(100%+0.35rem)] z-40 min-w-[220px] rounded-lg border p-2 shadow-[0_14px_30px_rgba(0,0,0,0.24)] ${
                     theme === 'light'
-                      ? 'bg-white/95'
-                      : 'bg-modrinth-card/95'
-                  } backdrop-blur-xl animate-fade-in-up`}
+                      ? 'bg-white/95 border-black/10'
+                      : 'bg-modrinth-card border-modrinth-border'
+                } app-floating-menu`}
                 >
                   <div className="px-2 py-1 text-[10px] font-bold uppercase tracking-[0.14em] text-modrinth-muted">
                     {t('sort_by')}
@@ -1374,12 +1060,15 @@ const Dashboard: React.FC<{ user: ModrinthUser; token: string }> = ({ user, toke
                   isFavorite={favoriteProjectIdSet.has(p.id)}
                   onToggleFavorite={showFavoriteProjects ? handleToggleFavoriteProject : undefined}
                   showFavoriteAction={showFavoriteProjects}
+                  organizationName={organizationNameByKey.get(p.organization_id || p.organization || '') || null}
+                  onDeleteProject={setDeleteCandidate}
+                  deleteProjectLabel={t('delete_project')}
                 />
              </div>
           ))}
           {sortedProjects.length === 0 && (
             <div className="text-center text-modrinth-muted py-40">
-              <div className="bg-modrinth-card/75 backdrop-blur-xl inline-block p-6 rounded-full mb-4 shadow-[0_10px_26px_rgba(0,0,0,0.25)]"><FileText size={48} className="opacity-50"/></div>
+              <div className="app-panel inline-block p-6 mb-4"><FileText size={48} className="opacity-50"/></div>
               <p className="text-lg font-medium">{t('no_projects')}</p>
               <p className="text-sm mt-2">{t('create_project')}</p>
             </div>
@@ -1393,79 +1082,71 @@ const Dashboard: React.FC<{ user: ModrinthUser; token: string }> = ({ user, toke
         token={token}
         onUnreadCountChange={setUnreadCount}
       />
+      <CreateProjectSheet
+        isOpen={showCreateProject}
+        organizations={organizations}
+        onClose={() => setShowCreateProject(false)}
+        onSave={async (data) => {
+          await createProject(data, token);
+          setShowCreateProject(false);
+          loadProjects();
+        }}
+      />
+      <DeleteProjectConfirmSheet
+        project={deleteCandidate}
+        saving={!!deletingProjectId}
+        onClose={() => setDeleteCandidate(null)}
+        onConfirm={handleConfirmDeleteProject}
+      />
     </div>
   );
 };
 
-const InviteMemberModal: React.FC<{ isOpen: boolean; onClose: () => void; onInvite: (userId: string) => Promise<void> }> = ({ isOpen, onClose, onInvite }) => {
-  const [query, setQuery] = useState('');
-  const [results, setResults] = useState<UserSearchResult[]>([]);
-  const [searching, setSearching] = useState(false);
-  const { t, theme } = useSettings();
+const DeleteProjectConfirmSheet: React.FC<{
+  project: ModrinthProject | null;
+  saving: boolean;
+  onClose: () => void;
+  onConfirm: () => Promise<void>;
+}> = ({ project, saving, onClose, onConfirm }) => {
+  const { t } = useSettings();
+  const { visible, closing, requestClose } = useAnimatedDismiss(!!project, onClose);
+  const [lastProject, setLastProject] = useState<ModrinthProject | null>(project);
+  const displayProject = project || lastProject;
+  const title = displayProject?.title || displayProject?.name || displayProject?.slug || displayProject?.id || '';
 
   useEffect(() => {
-    if (!query) { setResults([]); return; }
-    const timer = setTimeout(async () => {
-      setSearching(true);
-      try {
-        const hits = await searchUser(query);
-        setResults(hits || []); 
-      } catch (e) { 
-        setResults([]); 
-      }
-      setSearching(false);
-    }, 600);
-    return () => clearTimeout(timer);
-  }, [query]);
+    if (project) setLastProject(project);
+  }, [project]);
 
-  if (!isOpen) return null;
-
-  const overlayClass = theme === 'light' ? 'bg-black/30' : 'bg-black/60';
-  const modalClass = theme === 'light'
-    ? 'bg-white/95 border border-black/10 shadow-[0_14px_36px_rgba(0,0,0,0.2)]'
-    : 'bg-modrinth-card/85 shadow-[0_14px_36px_rgba(0,0,0,0.4)]';
-  const closeButtonClass = theme === 'light'
-    ? 'p-2 rounded-full hover:bg-black/5 text-black/60 hover:text-black transition-colors'
-    : 'p-2 rounded-full hover:bg-modrinth-cardHover text-modrinth-muted hover:text-modrinth-text transition-colors';
-  const rowHoverClass = theme === 'light' ? 'hover:bg-black/5' : 'hover:bg-modrinth-bg/60';
+  if (!visible || !displayProject) return null;
 
   return (
-    <div className={`fixed inset-0 z-[150] ${overlayClass} backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in`}>
-      <div className={`${modalClass} backdrop-blur-xl w-full max-w-sm rounded-3xl p-5 animate-fade-in-up relative overflow-hidden`}>
-        <div className="relative">
-        <div className="flex justify-between items-center mb-4">
-          <h3 className="text-lg font-bold text-modrinth-text">{t('invite')}</h3>
-          <button onClick={onClose} className={closeButtonClass}>
-          <X size={18}/></button>
+    <div
+      data-closing={closing ? 'true' : undefined}
+      className="app-overlay fixed inset-0 z-[260] flex items-end justify-center bg-black/60 p-4 backdrop-blur-md sm:items-center sm:p-6"
+      onClick={saving ? undefined : requestClose}
+    >
+      <div className="app-responsive-sheet w-full max-w-sm overflow-hidden bg-modrinth-card text-modrinth-text shadow-[0_18px_44px_rgba(0,0,0,0.5)]" onClick={(event) => event.stopPropagation()}>
+        <div className="border-b border-modrinth-border p-5">
+          <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-lg bg-red-500/10 text-red-400">
+            <Trash2 size={20} />
+          </div>
+          <h3 className="text-lg font-black">{t('delete_project')}</h3>
+          <p className="mt-2 text-sm leading-6 text-modrinth-muted">
+            {t('delete_project_confirm')}
+          </p>
+          <div className="mt-3 rounded-lg bg-modrinth-bg px-3 py-2 text-sm font-extrabold text-modrinth-text">
+            {title}
+          </div>
         </div>
-        <div className="relative mb-4">
-           <Search className={`absolute left-3 top-3 ${theme === 'light' ? 'text-black/40' : 'text-modrinth-muted'}`} size={16}/>
-           <input
-             autoFocus
-             type="text"
-             placeholder={t('search_user')}
-             className={`w-full rounded-2xl pl-10 pr-4 py-3 text-sm outline-none border transition-colors ${
-               theme === 'light'
-                 ? 'bg-white text-black border-black/10 placeholder:text-black/40 focus:border-modrinth-green'
-                 : 'bg-modrinth-bg text-modrinth-text border-modrinth-border/70 placeholder:text-modrinth-muted focus:border-modrinth-green'
-             }`}
-             value={query}
-             onChange={e=>setQuery(e.target.value)}
-           />
-        </div>
-        <div className="max-h-60 overflow-y-auto space-y-2">
-           {searching && <div className="flex justify-center py-4"><Loader2 className="animate-spin text-modrinth-green"/></div>}
-           {!searching && results.map(user => (
-             <div key={user.user_id} className={`flex items-center justify-between p-2 rounded-2xl group cursor-pointer ${rowHoverClass}`} onClick={() => { onInvite(user.user_id); onClose(); }}>
-                <div className="flex items-center gap-3">
-                  <img src={user.avatar_url} className="w-8 h-8 rounded-full" alt=""/>
-                  <span className="text-sm font-bold text-modrinth-text">{user.username}</span>
-                </div>
-                <button className="bg-modrinth-green/16 text-modrinth-green px-3 py-1.5 rounded-xl text-xs font-bold hover:bg-modrinth-green hover:text-white transition-colors active:scale-[0.98]">{t('add')}</button>
-             </div>
-           ))}
-           {!searching && query && results.length === 0 && <p className="text-center text-xs text-modrinth-muted py-4">{t('user_not_found')}</p>}
-        </div>
+        <div className="grid grid-cols-2 gap-2 p-4">
+          <button type="button" onClick={requestClose} disabled={saving} className="app-command px-3 py-3 text-sm font-extrabold disabled:opacity-60">
+            {t('cancel')}
+          </button>
+          <button type="button" onClick={onConfirm} disabled={saving} className="flex items-center justify-center gap-2 rounded-lg bg-red-500 px-3 py-3 text-sm font-extrabold text-white transition-transform active:scale-95 disabled:opacity-60">
+            {saving ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
+            {t('remove')}
+          </button>
         </div>
       </div>
     </div>
@@ -1473,1313 +1154,170 @@ const InviteMemberModal: React.FC<{ isOpen: boolean; onClose: () => void; onInvi
 };
 
 const ProfileEditModal: React.FC<{ isOpen: boolean; onClose: () => void; user: ModrinthUser; token: string; onUpdate: () => void }> = ({ isOpen, onClose, user, token, onUpdate }) => {
-  const [data, setData] = useState({ username: user.username, bio: user.bio || '', avatar_url: user.avatar_url });
+  const [data, setData] = useState({ username: user.username, bio: user.bio || '' });
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [avatarPreview, setAvatarPreview] = useState(user.avatar_url);
+  const [removeAvatar, setRemoveAvatar] = useState(false);
+  const [avatarError, setAvatarError] = useState('');
   const [saving, setSaving] = useState(false);
-  const { t, theme } = useSettings();
+  const avatarInputRef = useRef<HTMLInputElement | null>(null);
+  const { t } = useSettings();
+  const { visible, closing, requestClose } = useAnimatedDismiss(isOpen, onClose);
 
-  if (!isOpen) return null;
+  useEffect(() => {
+    if (!isOpen) return;
+    setData({ username: user.username, bio: user.bio || '' });
+    setAvatarFile(null);
+    setAvatarPreview(user.avatar_url);
+    setRemoveAvatar(false);
+    setAvatarError('');
+  }, [isOpen, user.avatar_url, user.bio, user.username]);
+
+  useEffect(() => {
+    if (!avatarFile) return;
+    const url = URL.createObjectURL(avatarFile);
+    setAvatarPreview(url);
+    return () => URL.revokeObjectURL(url);
+  }, [avatarFile]);
+
+  if (!visible) return null;
+
+  const handleAvatarFile = (file?: File) => {
+    if (!file) return;
+    setAvatarError('');
+
+    if (!file.type.startsWith('image/')) {
+      setAvatarError(t('avatar_image_error'));
+      return;
+    }
+
+    if (file.size > 2 * 1024 * 1024) {
+      setAvatarError(t('avatar_size_error'));
+      return;
+    }
+
+    setAvatarFile(file);
+    setRemoveAvatar(false);
+  };
+
+  const handleResetAvatar = () => {
+    setAvatarFile(null);
+    setRemoveAvatar(false);
+    setAvatarPreview(user.avatar_url);
+    setAvatarError('');
+    if (avatarInputRef.current) avatarInputRef.current.value = '';
+  };
+
+  const handleRemoveAvatar = () => {
+    setAvatarFile(null);
+    setRemoveAvatar(true);
+    setAvatarPreview('');
+    setAvatarError('');
+    if (avatarInputRef.current) avatarInputRef.current.value = '';
+  };
 
   const handleSave = async () => {
     setSaving(true);
     try {
       await modifyUser(user.id, data, token);
+      if (removeAvatar) {
+        await deleteUserAvatar(user.id, token);
+      } else if (avatarFile) {
+        await changeUserAvatar(user.id, avatarFile, token);
+      }
       onUpdate();
-      onClose();
-    } catch (e) { alert('Error updating profile'); }
-    setSaving(false);
+      requestClose();
+    } catch (e: any) {
+      alert(e?.message || 'Error updating profile');
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const overlayClass = theme === 'light' ? 'bg-black/40' : 'bg-black/60';
-  const modalClass = theme === 'light'
-    ? 'bg-white/95 border border-black/10 shadow-[0_14px_36px_rgba(0,0,0,0.2)]'
-    : 'bg-modrinth-card/90 shadow-[0_18px_44px_rgba(0,0,0,0.48)]';
-  const inputClass = theme === 'light'
-    ? 'bg-black/[0.04] text-black shadow-[inset_0_0_0_1px_rgba(0,0,0,0.08)] focus:shadow-[inset_0_0_0_1px_rgba(48,178,124,0.55)]'
-    : 'bg-modrinth-bg text-modrinth-text shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03),inset_0_0_0_2px_rgba(0,0,0,0.22)] focus:shadow-[inset_0_0_0_1px_rgba(74,222,128,0.35),inset_0_0_0_2px_rgba(0,0,0,0.22)]';
-  const mutedLabelClass = theme === 'light' ? 'text-black/60' : 'text-modrinth-muted';
-  const closeButtonClass = theme === 'light'
-    ? 'p-2 rounded-full hover:bg-black/5 text-black/60 hover:text-black transition-colors'
-    : 'p-2 rounded-full hover:bg-modrinth-bg text-modrinth-muted hover:text-modrinth-text transition-colors';
-  const cancelButtonClass = theme === 'light'
-    ? 'flex-1 py-3 rounded-2xl font-bold text-sm bg-black/5 text-black/70 hover:text-black hover:bg-black/10 transition-colors active:scale-[0.98]'
-    : 'flex-1 py-3 rounded-2xl font-bold text-sm bg-modrinth-bg text-modrinth-muted hover:text-modrinth-text hover:bg-modrinth-cardHover transition-colors active:scale-[0.98] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03),inset_0_0_0_2px_rgba(0,0,0,0.22)]';
-
   return (
-    <div className={`fixed inset-0 z-[150] ${overlayClass} backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in`}>
-      <div className={`${modalClass} backdrop-blur-xl w-full max-w-sm rounded-3xl p-5 animate-fade-in-up relative overflow-hidden`}>
-        <div className="relative">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-bold text-modrinth-text">{t('edit_profile')}</h3>
-            <button onClick={onClose} className={closeButtonClass}>
-              <X size={18} />
-            </button>
-          </div>
+    <div data-closing={closing ? 'true' : undefined} className="app-overlay fixed inset-0 z-[220] flex items-end justify-center p-4 sm:items-center" onClick={saving ? undefined : requestClose}>
+      <div className="app-responsive-sheet relative flex w-full max-w-md flex-col overflow-hidden" onClick={(event) => event.stopPropagation()}>
+        <div className="flex shrink-0 items-center justify-between border-b border-modrinth-border px-5 py-4">
+          <h3 className="text-lg font-bold text-modrinth-text">{t('edit_profile')}</h3>
+          <button onClick={requestClose} disabled={saving} className="app-close-button h-9 w-9 disabled:opacity-60">
+            <X size={18} />
+          </button>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
           <div className="space-y-4">
-            <div>
-              <label className={`text-xs font-bold uppercase mb-1 block ${mutedLabelClass}`}>{t('username')}</label>
-              <input className={`w-full rounded-2xl p-3 text-sm outline-none ${inputClass}`} value={data.username} onChange={e=>setData({...data, username:e.target.value})} />
-            </div>
-            <div>
-              <label className={`text-xs font-bold uppercase mb-1 block ${mutedLabelClass}`}>{t('bio')}</label>
-              <textarea className={`w-full rounded-2xl p-3 text-sm h-24 resize-none outline-none ${inputClass}`} value={data.bio} onChange={e=>setData({...data, bio:e.target.value})} />
-            </div>
-            <div>
-              <label className={`text-xs font-bold uppercase mb-1 block ${mutedLabelClass}`}>{t('avatar_url')}</label>
-              <input className={`w-full rounded-2xl p-3 text-sm outline-none ${inputClass}`} value={data.avatar_url} onChange={e=>setData({...data, avatar_url:e.target.value})} />
-            </div>
-            <div className="flex gap-3 pt-2">
-              <button onClick={onClose} className={cancelButtonClass}>{t('cancel')}</button>
-              <button onClick={handleSave} disabled={saving} className="flex-1 py-3 rounded-2xl font-bold text-sm bg-modrinth-green text-white flex justify-center items-center active:scale-[0.98] shadow-[0_12px_30px_rgba(48,178,124,0.25)]">
-                {saving ? <Loader2 className="animate-spin" size={18}/> : t('save')}
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-const ProjectDetail: React.FC<{ token: string; currentUserId?: string | null }> = ({ token, currentUserId }) => {
-  const { id } = useParams<{ id: string }>();
-  const navigate = useNavigate();
-  const [project, setProject] = useState<ModrinthProject | null>(null);
-  const [members, setMembers] = useState<ProjectMember[]>([]);
-  const [versions, setVersions] = useState<ModrinthVersion[]>([]);
-  const [deps, setDeps] = useState<ProjectDependency[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'overview' | 'edit' | 'members' | 'versions'>('overview');
-  const [tabDirection, setTabDirection] = useState<'left' | 'right'>('right');
-  const [isSaving, setIsSaving] = useState(false);
-  const [formData, setFormData] = useState<Partial<ModrinthProject>>({});
-  const [showInviteModal, setShowInviteModal] = useState(false);
-  const [editingVersion, setEditingVersion] = useState<ModrinthVersion | null>(null);
-  const [editingVersionName, setEditingVersionName] = useState('');
-  const [editingVersionType, setEditingVersionType] = useState<'release' | 'beta' | 'alpha'>('release');
-  const [editingVersionChangelog, setEditingVersionChangelog] = useState('');
-  const [editingVersionGameVersions, setEditingVersionGameVersions] = useState<string[]>([]);
-  const [editingVersionLoaders, setEditingVersionLoaders] = useState<string[]>([]);
-  const [editingVersionDependencies, setEditingVersionDependencies] = useState<ProjectDependency[]>([]);
-  const [savingVersion, setSavingVersion] = useState(false);
-  const [versionMenuId, setVersionMenuId] = useState<string | null>(null);
-  const versionMenuRef = useRef<HTMLDivElement | null>(null);
-  const [selectedVersion, setSelectedVersion] = useState<ModrinthVersion | null>(null);
-  const [selectedVersionDeps, setSelectedVersionDeps] = useState<ProjectDependency[]>([]);
-  const [selectedVersionDepsLoading, setSelectedVersionDepsLoading] = useState(false);
-  const { t, theme } = useSettings();
-
-  const [showBodyPreview, setShowBodyPreview] = useState(false);
-  const [galleryPreviewUrl, setGalleryPreviewUrl] = useState<string | null>(null);
-  const [memberEdits, setMemberEdits] = useState<Record<string, { role: string; permissions: string; payouts_split: string; ordering: string }>>({});
-  const [savingMemberId, setSavingMemberId] = useState<string | null>(null);
-  const [transferCandidate, setTransferCandidate] = useState<{ id: string; name: string } | null>(null);
-
-  const permissionDefs = useMemo(() => ([
-    { bit: 0, label: t('perm_upload_version') },
-    { bit: 1, label: t('perm_delete_version') },
-    { bit: 2, label: t('perm_edit_details') },
-    { bit: 3, label: t('perm_edit_body') },
-    { bit: 4, label: t('perm_manage_invites') },
-    { bit: 5, label: t('perm_remove_member') },
-    { bit: 6, label: t('perm_edit_member') },
-    { bit: 7, label: t('perm_delete_project') },
-    { bit: 8, label: t('perm_view_analytics') },
-    { bit: 9, label: t('perm_view_payouts') }
-  ]), [t]);
-
-  const [gameVersionTags, setGameVersionTags] = useState<string[]>([]);
-  const [loaderTags, setLoaderTags] = useState<string[]>([]);
-
-  useEffect(() => {
-    if (!versionMenuId) return;
-
-    const handlePointerDown = (event: PointerEvent) => {
-      if (!versionMenuRef.current?.contains(event.target as Node)) {
-        setVersionMenuId(null);
-      }
-    };
-
-    document.addEventListener('pointerdown', handlePointerDown);
-    return () => document.removeEventListener('pointerdown', handlePointerDown);
-  }, [versionMenuId]);
-  const [newDepType, setNewDepType] = useState<'required' | 'optional' | 'incompatible' | 'embedded'>('required');
-
-  const allGameVersions = useMemo(() => {
-    const fromTags = gameVersionTags;
-    if (fromTags.length > 0) return fromTags;
-    return Array.from(new Set(versions.flatMap(v => v.game_versions))).sort();
-  }, [gameVersionTags, versions]);
-
-  const allLoaders = useMemo(() => {
-    const fromTags = loaderTags;
-    if (fromTags.length > 0) return fromTags;
-    return Array.from(new Set(versions.flatMap(v => v.loaders))).sort();
-  }, [loaderTags, versions]);
-
-  const tabsOrder: Array<'overview' | 'versions' | 'edit' | 'members'> = ['overview', 'versions', 'edit', 'members'];
-  const touchStartX = useRef<number | null>(null);
-  const touchStartY = useRef<number | null>(null);
-  const depInputRef = useRef<HTMLInputElement | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const loadVersionDependencies = async () => {
-      if (!selectedVersion) {
-        setSelectedVersionDeps([]);
-        setSelectedVersionDepsLoading(false);
-        return;
-      }
-
-      const rawDeps = selectedVersion.dependencies || [];
-      if (rawDeps.length === 0) {
-        setSelectedVersionDeps([]);
-        setSelectedVersionDepsLoading(false);
-        return;
-      }
-
-      const projectIds = Array.from(new Set(rawDeps.map((dep) => dep.project_id).filter(Boolean))) as string[];
-      if (projectIds.length === 0) {
-        setSelectedVersionDeps(rawDeps);
-        setSelectedVersionDepsLoading(false);
-        return;
-      }
-
-      setSelectedVersionDepsLoading(true);
-      try {
-        const projects = await Promise.all(
-          projectIds.map(async (projectId) => {
-            try {
-              return await fetchProject(projectId, token);
-            } catch {
-              return null;
-            }
-          })
-        );
-
-        if (cancelled) return;
-
-        const byId = new Map(projects.filter(Boolean).map((item) => [item!.id, item!] as const));
-        setSelectedVersionDeps(
-          rawDeps.map((dep) => {
-            const meta = dep.project_id ? byId.get(dep.project_id) : null;
-            return meta ? { ...dep, title: dep.title || meta.title, icon_url: dep.icon_url || meta.icon_url } : dep;
-          })
-        );
-      } finally {
-        if (!cancelled) setSelectedVersionDepsLoading(false);
-      }
-    };
-
-    loadVersionDependencies().catch(console.error);
-
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedVersion, token]);
-
-  const handleTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
-    const touch = e.touches[0];
-    touchStartX.current = touch.clientX;
-    touchStartY.current = touch.clientY;
-  };
-
-  const handleTouchEnd = (e: React.TouchEvent<HTMLDivElement>) => {
-    if (touchStartX.current === null || touchStartY.current === null) return;
-
-    const touch = e.changedTouches[0];
-    const dx = touch.clientX - touchStartX.current;
-    const dy = touch.clientY - touchStartY.current;
-
-    touchStartX.current = null;
-    touchStartY.current = null;
-
-    // Ignore mostly vertical gestures or very short swipes
-    if (Math.abs(dx) < 40 || Math.abs(dx) < Math.abs(dy)) return;
-
-    const currentIndex = tabsOrder.indexOf(activeTab as any);
-    if (currentIndex === -1) return;
-
-    // Left swipe -> next tab, right swipe -> previous tab
-    if (dx < 0 && currentIndex < tabsOrder.length - 1) {
-      // двигаемся вперёд, контент заезжает справа
-      setTabDirection('right');
-      setActiveTab(tabsOrder[currentIndex + 1]);
-    } else if (dx > 0 && currentIndex > 0) {
-      // двигаемся назад, контент заезжает слева
-      setTabDirection('left');
-      setActiveTab(tabsOrder[currentIndex - 1]);
-    }
-  };
-
-  const loadData = useCallback(async () => {
-    if (!id) return;
-    try {
-      setLoading(true);
-      const [pData, mData, dData, vData, gvTags, ldTags] = await Promise.all([
-        fetchProject(id, token),
-        fetchProjectMembers(id, token),
-        fetchProjectDependencies(id, token),
-        fetchProjectVersions(id, token),
-        fetchGameVersionTags(),
-        fetchLoaderTags()
-      ]);
-      setProject(pData);
-      setMembers(mData);
-      setDeps(dData);
-      setVersions(vData);
-      setGameVersionTags(gvTags);
-      setLoaderTags(ldTags);
-      setFormData({
-        title: pData.title,
-        description: pData.description,
-        body: pData.body,
-        client_side: pData.client_side,
-        server_side: pData.server_side,
-        source_url: pData.source_url || '',
-        issues_url: pData.issues_url || '',
-        wiki_url: pData.wiki_url || '',
-        discord_url: pData.discord_url || '',
-        license: pData.license,
-        status: pData.status 
-      });
-    } catch (error) {
-      console.error(error);
-    } finally {
-      setLoading(false);
-    }
-  }, [id, token]);
-
-  const handleAddDependency = useCallback(async (rawIdOrSlug: string) => {
-    const value = rawIdOrSlug.trim();
-    if (!value) return;
-    try {
-      // Resolve slug or id to internal project id so DB foreign key passes
-      const proj = await fetchProject(value, token);
-      const projectId = proj.id;
-      setEditingVersionDependencies(prev => [
-        ...prev,
-        { project_id: projectId, version_id: null, file_name: null, dependency_type: newDepType }
-      ]);
-    } catch (e: any) {
-      alert(e.message || 'Failed to resolve project id for dependency');
-    }
-  }, [token, newDepType]);
-
-  const openEditVersion = (v: ModrinthVersion) => {
-    setEditingVersion(v);
-    setEditingVersionName(v.name || '');
-    setEditingVersionType(v.version_type as any);
-    setEditingVersionChangelog((v.changelog as any) || '');
-    setEditingVersionGameVersions([...v.game_versions]);
-    setEditingVersionLoaders([...v.loaders]);
-    setEditingVersionDependencies(v.dependencies ? [...v.dependencies] : []);
-  };
-
-  const handleSaveVersion = async () => {
-    if (!editingVersion) return;
-    try {
-      setSavingVersion(true);
-      await modifyVersion(
-        editingVersion.id,
-        {
-          name: editingVersionName,
-          version_type: editingVersionType,
-          changelog: editingVersionChangelog,
-          game_versions: editingVersionGameVersions,
-          loaders: editingVersionLoaders,
-          dependencies: editingVersionDependencies,
-        },
-        token
-      );
-      await loadData();
-      setEditingVersion(null);
-    } catch (e: any) {
-      alert(e.message || 'Failed to update version');
-    } finally {
-      setSavingVersion(false);
-    }
-  };
-
-  const handleDeleteVersion = async (v: ModrinthVersion) => {
-    if (!window.confirm('Delete this version?')) return;
-    try {
-      await deleteVersionById(v.id, token);
-      await loadData();
-    } catch (e: any) {
-      alert(e.message || 'Failed to delete version');
-    }
-  };
-
-  useEffect(() => { loadData(); }, [loadData]);
-
-  useEffect(() => {
-    if (members.length === 0) return;
-    setMemberEdits(prev => {
-      const next = { ...prev };
-      members.forEach(m => {
-        if (!next[m.user.id]) {
-          next[m.user.id] = {
-            role: m.role || '',
-            permissions: m.permissions !== undefined && m.permissions !== null ? String(m.permissions) : '',
-            payouts_split: (m as any).payouts_split !== undefined && (m as any).payouts_split !== null ? String((m as any).payouts_split) : '',
-            ordering: (m as any).ordering !== undefined && (m as any).ordering !== null ? String((m as any).ordering) : ''
-          };
-        }
-      });
-      return next;
-    });
-  }, [members]);
-
-  const handleInputChange = (field: keyof ModrinthProject | string, value: any) => {
-    setFormData(prev => field === 'license_id' ? { ...prev, license: { ...prev.license!, id: value, name: prev.license?.name || '' } } : { ...prev, [field]: value });
-  };
-
-  const handleSave = async () => {
-    if (!project || !id) return;
-    setIsSaving(true);
-    try {
-      await updateProject(id, formData, token);
-      await loadData();
-      const notif = document.createElement('div');
-      notif.innerText = t('saved');
-      notif.className = 'fixed bottom-20 left-1/2 -translate-x-1/2 bg-modrinth-green text-white px-6 py-3 rounded-full shadow-xl z-[200] animate-fade-in-up font-bold text-sm';
-      document.body.appendChild(notif);
-      setTimeout(() => notif.remove(), 2000);
-      setActiveTab('overview');
-    } catch (error: any) {
-      alert(`Error: ${error.message}`);
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-
-  const handleIconUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-      if(!e.target.files?.[0] || !id) return;
-      try {
-          await changeProjectIcon(id, e.target.files[0], token);
-          await loadData();
-      } catch(err:any) { alert(err.message); }
-  };
-
-  const handleDeleteIcon = async () => {
-      if(!id || !confirm('Delete icon?')) return;
-      try { await deleteProjectIcon(id, token); await loadData(); } catch(err:any) { alert(err.message); }
-  };
-
-  const handleGalleryUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-      if(!e.target.files?.[0] || !id) return;
-      try {
-          await addGalleryImage(id, e.target.files[0], false, 'Gallery Image', '', token);
-          await loadData();
-      } catch(err:any) { alert(err.message); }
-  };
-
-  const handleDeleteGallery = async (url: string) => {
-      if(!id || !confirm('Delete image?')) return;
-      try { await deleteGalleryImage(id, url, token); await loadData(); } catch(err:any) { alert(err.message); }
-  };
-
-  const handleRemoveMember = async (userId: string) => {
-    if (!project || !confirm(t('member_remove_confirm'))) return;
-    try {
-      await deleteTeamMember(project.team, userId, token);
-      await loadData();
-    } catch(e) { alert('Failed to remove member'); }
-  };
-
-  const handleRoleSave = async (userId: string) => {
-     if(!project) return;
-     const edit = memberEdits[userId];
-     if (!edit) return;
-     const payload: any = {};
-     if (edit.role.trim() !== '') payload.role = edit.role.trim();
-     const permissionsNum = edit.permissions !== '' ? Number(edit.permissions) : null;
-     const payoutsSplitNum = edit.payouts_split !== '' ? Number(edit.payouts_split) : null;
-     const orderingNum = edit.ordering !== '' ? Number(edit.ordering) : null;
-     if (permissionsNum !== null && !Number.isNaN(permissionsNum)) payload.permissions = permissionsNum;
-     if (payoutsSplitNum !== null && !Number.isNaN(payoutsSplitNum)) payload.payouts_split = payoutsSplitNum;
-     if (orderingNum !== null && !Number.isNaN(orderingNum)) payload.ordering = orderingNum;
-     try {
-        setSavingMemberId(userId);
-        await updateTeamMember(project.team, userId, payload, token);
-        await loadData();
-     } catch(e) { alert('Failed to update member'); }
-     finally { setSavingMemberId(null); }
-  };
-
-  const handleJoinTeam = async () => {
-    if (!project) return;
-    try {
-      await joinTeam(project.team, token);
-      await loadData();
-    } catch (e: any) {
-      alert(e.message || 'Failed to join team');
-    }
-  };
-
-  const openTransferOwnership = (userId: string, name: string) => {
-    setTransferCandidate({ id: userId, name });
-  };
-
-  const handleTransferOwnership = async () => {
-    if (!project || !transferCandidate) return;
-    try {
-      await transferTeamOwnership(project.team, transferCandidate.id, token);
-      await loadData();
-    } catch (e: any) {
-      alert(e.message || 'Failed to transfer ownership');
-    }
-    setTransferCandidate(null);
-  };
-
-  const handleInvite = async (userId: string) => {
-    if (!project) return;
-    try {
-      await addTeamMember(project.team, userId, token);
-      await loadData();
-      setShowInviteModal(false);
-    } catch(e: any) { alert(e.message || 'Failed to invite'); }
-  };
-
-  if (loading && !project) return <div className="h-screen flex items-center justify-center bg-modrinth-bg"><Loader2 className="animate-spin text-modrinth-green w-10 h-10" /></div>;
-  if (!project) return <div className="h-screen flex items-center justify-center bg-modrinth-bg text-modrinth-text">Not Found</div>;
-
-  const projectSummary = (project.description || '').trim();
-
-  return (
-    <div
-      className="min-h-screen bg-modrinth-bg pb-10 relative z-0 animate-fade-in"
-      onTouchStart={handleTouchStart}
-      onTouchEnd={handleTouchEnd}
-    >
-      <div className="sticky top-0 z-50 bg-modrinth-bg/90 backdrop-blur-xl border-b border-modrinth-border pt-[env(safe-area-inset-top)] transition-colors duration-300">
-        <div className="flex items-center justify-between px-4 py-3">
-          <button onClick={() => navigate(-1)} className="p-2 -ml-2 rounded-full text-modrinth-text hover:bg-white/10 active:scale-90"><ArrowLeft size={24} /></button>
-          <h1 className="text-lg font-bold text-modrinth-text truncate max-w-[180px]">{project.title}</h1>
-          {activeTab === 'edit' ? (
-            <button onClick={handleSave} disabled={isSaving} className="bg-modrinth-green text-white px-4 py-1.5 rounded-full text-sm font-bold flex items-center gap-2 active:scale-95">
-              {isSaving ? <Loader2 size={16} className="animate-spin"/> : <Save size={16} />} {t('save')}
-            </button>
-          ) : <div className="w-16"></div>}
-        </div>
-        <div className="flex px-4 gap-6 justify-center mt-1 overflow-x-auto no-scrollbar">
-          {['overview', 'versions', 'edit', 'members'].map((tab, index) => (
-            <button
-              key={tab}
-              onClick={() => {
-                const currentIndex = tabsOrder.indexOf(activeTab as any);
-                if (currentIndex !== -1 && currentIndex !== index) {
-                  setTabDirection(index > currentIndex ? 'right' : 'left');
-                }
-                setActiveTab(tab as any);
-              }}
-              className={`pb-3 text-sm font-bold whitespace-nowrap relative ${activeTab === tab ? 'text-modrinth-text' : 'text-modrinth-muted'}`}
-            >
-              {t(tab)}
-              {activeTab === tab && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-modrinth-green rounded-t-full" />}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/** Direction-based animation class for tab content */}
-      {(() => {
-        const animClass = tabDirection === 'left' ? 'animate-slide-in-left' : 'animate-slide-in-right';
-        return (
-      <div className="flex-1 overflow-y-auto">
-        <div className="px-4 py-6">
-        {activeTab === 'overview' && (
-          <div className={`space-y-6 ${animClass}`}>
-             <div className="grid grid-cols-2 gap-3">
-                <div className="bg-modrinth-card/75 backdrop-blur-xl p-5 rounded-3xl relative overflow-hidden shadow-[0_10px_26px_rgba(0,0,0,0.25)]">
-                   <div className="absolute top-0 right-0 p-3 opacity-10 text-modrinth-text"><Download size={40} /></div>
-                   <p className="text-modrinth-muted text-xs uppercase font-bold mb-1">{t('downloads')}</p>
-                   <p className="text-2xl font-bold text-modrinth-text">{project.downloads.toLocaleString()}</p>
-                </div>
-                <div className="bg-modrinth-card/75 backdrop-blur-xl p-5 rounded-3xl relative overflow-hidden shadow-[0_10px_26px_rgba(0,0,0,0.25)]">
-                   <div className="absolute top-0 right-0 p-3 opacity-10 text-modrinth-text"><Heart size={40} /></div>
-                   <p className="text-modrinth-muted text-xs uppercase font-bold mb-1">{t('likes')}</p>
-                   <p className="text-2xl font-bold text-modrinth-text">{project.followers.toLocaleString()}</p>
-                </div>
-             </div>
-             <div className="bg-modrinth-card/75 backdrop-blur-xl rounded-3xl p-5 shadow-[0_10px_26px_rgba(0,0,0,0.22)] relative overflow-hidden">
-                <h3 className="text-modrinth-text font-bold mb-2 text-sm flex items-center gap-2"><Info size={16} className="text-modrinth-green"/> {t('summary')}</h3>
-                <p className="text-modrinth-text/80 leading-relaxed text-sm">{projectSummary || t('no_summary')}</p>
-             </div>
-             <div className="bg-modrinth-card/75 backdrop-blur-xl rounded-3xl p-5 shadow-[0_10px_26px_rgba(0,0,0,0.22)] relative overflow-hidden">
-                <h3 className="text-modrinth-text font-bold mb-2 text-sm flex items-center gap-2"><FileText size={16} className="text-modrinth-green"/> {t('description')}</h3>
-                {project.body?.trim() ? (
-                  <React.Suspense fallback={<div className="text-modrinth-muted text-sm py-2">Loading description...</div>}>
-                    <MarkdownRenderer
-                      content={project.body}
-                      className="text-modrinth-text/80 leading-relaxed text-sm markdown-preview"
-                    />
-                  </React.Suspense>
-                ) : (
-                  <p className="text-modrinth-text/80 leading-relaxed text-sm">{t('no_description')}</p>
-                )}
-             </div>
-             <div className="grid grid-cols-2 gap-4">
-               <div className="bg-modrinth-card/75 backdrop-blur-xl p-4 rounded-3xl shadow-[0_10px_26px_rgba(0,0,0,0.2)] relative overflow-hidden">
-                  <div className="flex items-center gap-2 mb-3 text-modrinth-muted text-xs font-bold uppercase"><Monitor size={14} /> {t('client')}</div>
-                  <div className={`text-center py-2 rounded-lg font-bold text-sm border ${project.client_side === 'required' ? 'bg-red-500/10 text-red-400 border-red-500/20' : 'bg-modrinth-cardHover text-modrinth-muted border-modrinth-border'}`}>{project.client_side}</div>
-               </div>
-               <div className="bg-modrinth-card/75 backdrop-blur-xl p-4 rounded-3xl shadow-[0_10px_26px_rgba(0,0,0,0.2)] relative overflow-hidden">
-                  <div className="flex items-center gap-2 mb-3 text-modrinth-muted text-xs font-bold uppercase"><Server size={14} /> {t('server')}</div>
-                  <div className={`text-center py-2 rounded-lg font-bold text-sm border ${project.server_side === 'required' ? 'bg-red-500/10 text-red-400 border-red-500/20' : 'bg-modrinth-cardHover text-modrinth-muted border-modrinth-border'}`}>{project.server_side}</div>
-               </div>
-             </div>
-             
-             {/* Dependencies */}
-             <div className="bg-modrinth-card/75 backdrop-blur-xl rounded-3xl p-5 shadow-[0_10px_26px_rgba(0,0,0,0.22)] relative overflow-hidden">
-                 <h3 className="text-modrinth-text font-bold mb-3 text-sm flex items-center gap-2"><Package size={16} className="text-modrinth-green"/> {t('dependencies')}</h3>
-                 <div className="space-y-3">
-                     {deps.length === 0 && <p className="text-xs text-modrinth-muted italic">{t('no_dependencies')}</p>}
-                     {deps.map((d, i) => (
-                         <div key={i} className="flex items-center gap-3 bg-modrinth-bg p-3 rounded-2xl shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)]">
-                             <div className="w-10 h-10 rounded-lg bg-modrinth-card shadow-[inset_0_0_0_1px_rgba(255,255,255,0.04)] overflow-hidden flex-shrink-0 flex items-center justify-center">
-                                {d.icon_url ? (
-                                  <img src={d.icon_url} className="w-full h-full object-cover"/>
-                                ) : (
-                                  <Package size={20} className="text-modrinth-muted opacity-50"/>
-                                )}
-                             </div>
-                             <div className="flex-1 min-w-0">
-                                <div className="flex items-center justify-between">
-                                   <span className="text-sm font-bold text-modrinth-text truncate pr-2">{d.title || d.project_id}</span>
-                                   <span className="text-[10px] text-modrinth-muted bg-modrinth-bg px-2 py-0.5 rounded-full uppercase tracking-wider">{d.dependency_type}</span>
-                                </div>
-                                <p className="text-[10px] text-modrinth-muted font-mono mt-0.5">{d.project_id || d.file_name}</p>
-                             </div>
-                         </div>
-                     ))}
-                 </div>
-             </div>
-
-             <div className="space-y-2 pt-2">
-               <h3 className="text-modrinth-muted font-bold text-xs uppercase px-1 mb-1">{t('resources')}</h3>
-               {project.source_url && <a href={project.source_url} target="_blank" className="flex items-center gap-3 p-4 rounded-3xl bg-modrinth-card/75 backdrop-blur-xl text-modrinth-text active:scale-[0.99] shadow-[0_10px_26px_rgba(0,0,0,0.2)]"><Globe size={18} /><span className="text-sm font-medium">{t('source')}</span><ExternalLink size={14} className="ml-auto opacity-30"/></a>}
-               {project.issues_url && <a href={project.issues_url} target="_blank" className="flex items-center gap-3 p-4 rounded-3xl bg-modrinth-card/75 backdrop-blur-xl text-modrinth-text active:scale-[0.99] shadow-[0_10px_26px_rgba(0,0,0,0.2)]"><Info size={18} /><span className="text-sm font-medium">{t('issues')}</span><ExternalLink size={14} className="ml-auto opacity-30"/></a>}
-             </div>
-          </div>
-        )}
-        {activeTab === 'versions' && (
-            <div className={`space-y-4 pb-24 ${animClass}`}>
-                {versions.length === 0 ? (
-                    <div className="text-center py-10 text-modrinth-muted">
-                        <Layers size={48} className="mx-auto mb-4 opacity-50"/>
-                        <p>{t('no_versions')}</p>
-                    </div>
-                ) : (
-                    versions.map(v => (
-                        <div
-                          key={v.id}
-                          onClick={() => setSelectedVersion(v)}
-                          className="bg-modrinth-card/75 backdrop-blur-xl p-4 rounded-3xl relative shadow-[0_10px_26px_rgba(0,0,0,0.22)] overflow-hidden cursor-pointer active:scale-[0.99] transition-transform"
-                        >
-                            <div className="flex justify-between items-start mb-3">
-                                <div>
-                                    <div className="flex items-center gap-2 mb-1">
-                                        <span className="text-modrinth-text font-bold text-base">{v.version_number}</span>
-                                        <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded border ${
-                                            v.version_type === 'release' ? 'text-green-400 border-green-400/30 bg-green-400/10' :
-                                            v.version_type === 'beta' ? 'text-blue-400 border-blue-400/30 bg-blue-400/10' :
-                                            'text-orange-400 border-orange-400/30 bg-orange-400/10'
-                                        }`}>
-                                            {t(v.version_type)}
-                                        </span>
-                                    </div>
-                                    <p className="text-xs text-modrinth-muted truncate w-40">{v.name}</p>
-                                </div>
-                                <div className="flex flex-col items-end gap-2" ref={versionMenuId === v.id ? versionMenuRef : null}>
-                                  <button
-                                    onClick={(e) => { e.stopPropagation(); setVersionMenuId(prev => prev === v.id ? null : v.id); }}
-                                    className={`p-3 rounded-full transition-colors ${
-                                      theme === 'light'
-                                        ? 'text-black/80 hover:text-black hover:bg-black/5'
-                                        : 'text-zinc-300 hover:text-modrinth-green hover:bg-modrinth-bg'
-                                    }`}
-                                  >
-                                    <MoreVertical size={20} strokeWidth={3} />
-                                  </button>
-                                  {versionMenuId === v.id && (
-                                    <div
-                                      className={`absolute top-10 right-2 z-30 rounded-2xl text-[11px] overflow-hidden animate-fade-in-up min-w-[140px] ${
-                                        theme === 'light'
-                                          ? 'bg-white/95 border border-black/10 shadow-[0_12px_30px_rgba(0,0,0,0.2)] backdrop-blur-xl'
-                                          : 'bg-modrinth-card shadow-[0_12px_30px_rgba(0,0,0,0.6)]'
-                                      }`}
-                                      onClick={e => e.stopPropagation()}
-                                    >
-                                      <button
-                                        className={`relative w-full px-3 py-2 text-left flex items-center gap-1.5 ${
-                                          theme === 'light' ? 'text-black hover:bg-black/5' : 'text-modrinth-text hover:bg-modrinth-bg'
-                                        }`}
-                                        onClick={() => { setVersionMenuId(null); openEditVersion(v); }}
-                                      >
-                                        Edit
-                                      </button>
-                                      <button
-                                        className={`relative w-full px-3 py-2 text-left text-red-400 hover:bg-red-500/10 ${theme === 'light' ? 'border-t border-black/10' : 'border-t border-modrinth-border/20'}`}
-                                        onClick={() => { setVersionMenuId(null); handleDeleteVersion(v); }}
-                                      >
-                                        Delete
-                                      </button>
-                                    </div>
-                                  )}
-                                  <span className="flex items-center gap-1 text-xs font-medium text-modrinth-text"><Download size={12} className="text-modrinth-green"/> {v.downloads.toLocaleString()}</span>
-                                  <span className="flex items-center gap-1 text-[10px] text-modrinth-muted"><Calendar size={10}/> {new Date(v.date_published).toLocaleDateString()}</span>
-                                </div>
-                            </div>
-                            <div className="space-y-2">
-                                <div className="flex gap-2 overflow-x-auto no-scrollbar">
-                                    {v.game_versions.map(gv => (
-                                        <span key={gv} className="text-[10px] bg-modrinth-bg px-2 py-1 rounded-full text-modrinth-muted whitespace-nowrap">{gv}</span>
-                                    ))}
-                                </div>
-                                <div className="flex gap-2">
-                                    {v.loaders.map(l => (
-                                        <span key={l} className="text-[10px] font-bold uppercase text-modrinth-text/70 bg-modrinth-bg px-2 py-0.5 rounded-full">{l}</span>
-                                    ))}
-                                </div>
-                            </div>
-                        </div>
-                    ))
-                )}
-            </div>
-        )}
-        {activeTab === 'edit' && (
-          <div className={`space-y-8 pb-20 ${animClass}`}>
-            {/* Icon Management */}
-            <section className="space-y-4">
-                <div className="flex items-center gap-2 text-modrinth-green mb-2 px-1"><ImageIcon size={18} /><h3 className="font-bold uppercase tracking-wider text-sm">{t('icon')}</h3></div>
-                <div className="bg-modrinth-card/75 backdrop-blur-xl p-5 rounded-3xl flex items-center gap-4 shadow-[0_10px_26px_rgba(0,0,0,0.22)] relative overflow-hidden">
-                    <div className="w-16 h-16 rounded-2xl bg-modrinth-bg/60 border border-modrinth-border/30 overflow-hidden flex items-center justify-center relative">
-                        {project.icon_url ? <img src={project.icon_url} className="w-full h-full object-cover" /> : <ImageIcon className="text-modrinth-muted"/>}
-                    </div>
-                    <div className="flex-1 space-y-2 relative">
-                        <label className="flex items-center justify-center gap-2 bg-modrinth-bg/60 border border-modrinth-border/30 text-modrinth-text text-xs font-bold py-2 rounded-2xl cursor-pointer hover:bg-modrinth-bg transition-colors">
-                            <Upload size={14}/> {t('upload')}
-                            <input type="file" className="hidden" accept="image/png,image/jpeg" onChange={handleIconUpload} />
-                        </label>
-                        {project.icon_url && (
-                            <button onClick={handleDeleteIcon} className="w-full bg-red-500/10 text-red-400 border border-red-500/20 text-xs font-bold py-2 rounded-xl hover:bg-red-500/20 flex items-center justify-center gap-2">
-                                <Trash2 size={14}/> {t('remove')}
-                            </button>
-                        )}
-                    </div>
-                </div>
-            </section>
-
-            <section className="space-y-4">
-              <div className="flex items-center gap-2 text-modrinth-green mb-2 px-1"><Edit3 size={18} /><h3 className="font-bold uppercase tracking-wider text-sm">{t('main_info')}</h3></div>
-              <div className="space-y-4 bg-modrinth-card/75 backdrop-blur-xl p-5 rounded-3xl shadow-[0_10px_26px_rgba(0,0,0,0.22)] relative overflow-hidden">
-                <div><label className="block text-xs font-bold text-modrinth-muted uppercase mb-1.5">{t('title')}</label><input type="text" value={formData.title || ''} onChange={e => handleInputChange('title', e.target.value)} className="w-full bg-modrinth-bg border border-modrinth-border rounded-xl p-3.5 text-modrinth-text text-sm focus:border-modrinth-green outline-none"/></div>
-                <div>
-                    <label className="block text-xs font-bold text-modrinth-muted uppercase mb-1.5">{t('short_desc')}</label>
-                    <textarea value={formData.description || ''} onChange={e => handleInputChange('description', e.target.value)} className="w-full bg-modrinth-bg border border-modrinth-border rounded-xl p-3.5 text-modrinth-text text-sm focus:border-modrinth-green outline-none h-24 resize-none"/>
-                </div>
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <label className="block text-xs font-bold text-modrinth-muted uppercase">{t('body_desc')}</label>
-                    <button
-                      type="button"
-                      onClick={() => setShowBodyPreview(v => !v)}
-                      className="text-[10px] px-2 py-1 rounded-full border border-modrinth-border bg-modrinth-bg text-modrinth-muted hover:text-modrinth-text hover:border-modrinth-green transition-colors"
-                    >
-                      {showBodyPreview ? t('hide_preview') : t('show_preview')}
-                    </button>
-                  </div>
-                  <textarea
-                    value={formData.body || ''}
-                    onChange={e => handleInputChange('body', e.target.value)}
-                    className="w-full bg-modrinth-bg border border-modrinth-border rounded-xl p-3.5 text-modrinth-text text-sm focus:border-modrinth-green outline-none h-40 font-mono text-xs"
-                  />
-                  {showBodyPreview && (
-                  <div className="mt-1 bg-modrinth-bg border border-dashed border-modrinth-border rounded-xl p-3.5 text-sm text-modrinth-text prose prose-invert max-w-none markdown-preview no-scrollbar overflow-x-auto">
-                      <React.Suspense fallback={<div className="text-modrinth-muted text-xs">Loading preview...</div>}>
-                        <MarkdownRenderer content={formData.body || ''} />
-                      </React.Suspense>
-                  </div>
-                  )}
-                </div>
-              </div>
-            </section>
-
-            {/* Gallery Management */}
-            <section className="space-y-4">
-                <div className="flex items-center gap-2 text-modrinth-green mb-2 px-1"><ImageIcon size={18} /><h3 className="font-bold uppercase tracking-wider text-sm">{t('gallery')}</h3></div>
-                <div className="bg-modrinth-card/75 backdrop-blur-xl p-5 rounded-3xl shadow-[0_10px_26px_rgba(0,0,0,0.22)] relative overflow-hidden">
-                    <div className="grid grid-cols-3 gap-2 mb-4">
-                        {project.gallery?.map((img, idx) => (
-                            <div
-                              key={idx}
-                              className="relative aspect-square rounded-lg overflow-hidden group bg-modrinth-bg cursor-zoom-in"
-                              onClick={() => setGalleryPreviewUrl(img.url)}
-                            >
-                                <img src={img.url} className="w-full h-full object-cover" />
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleDeleteGallery(img.url);
-                                  }}
-                                  className="absolute top-1 right-1 bg-black/50 p-1 rounded text-white opacity-0 group-hover:opacity-100 transition-opacity"
-                                >
-                                  <X size={12}/>
-                                </button>
-                            </div>
-                        ))}
-                    </div>
-                    <label className="flex items-center justify-center gap-2 w-full bg-modrinth-bg border-2 border-dashed border-modrinth-border text-modrinth-muted text-sm font-bold py-4 rounded-xl cursor-pointer hover:border-modrinth-green hover:text-modrinth-green transition-colors">
-                        <Upload size={18}/> {t('add')} Image
-                        <input type="file" className="hidden" accept="image/*" onChange={handleGalleryUpload} />
-                    </label>
-                </div>
-            </section>
-
-            <section className="space-y-4">
-              <div className="flex items-center gap-2 text-modrinth-green mb-2 px-1"><ShieldCheck size={18} /><h3 className="font-bold uppercase tracking-wider text-sm">{t('status_license')}</h3></div>
-              <div className="bg-modrinth-card/75 backdrop-blur-xl p-5 rounded-3xl shadow-[0_10px_26px_rgba(0,0,0,0.22)] relative overflow-hidden space-y-4">
-                 {/* Read-only current status */}
-                 <div>
-                    <label className="block text-xs font-bold text-modrinth-muted uppercase mb-1.5">{t('status')}</label>
-                    <div className="w-full bg-modrinth-bg/50 border border-modrinth-border rounded-xl p-3.5 text-modrinth-muted text-sm cursor-not-allowed flex items-center gap-2">
-                       <Lock size={14}/> {formData.status}
-                    </div>
-                 </div>
-                 {/* Action Status */}
-                 <div>
-                    <label className="block text-xs font-bold text-modrinth-muted uppercase mb-1.5">{t('change_status')}</label>
-                    <select 
-                      value={['approved', 'processing', 'rejected', 'unknown'].includes(formData.status || '') ? 'keep' : formData.status} 
-                      onChange={e => {
-                        const val = e.target.value;
-                        if (val !== 'keep') handleInputChange('status', val);
-                      }} 
-                      className="w-full bg-modrinth-bg border border-modrinth-border rounded-xl p-3.5 text-modrinth-text text-sm"
-                    >
-                      <option value="keep">{t('keep_current')}</option>
-                      <option value="draft">Draft</option>
-                      <option value="unlisted">Unlisted</option>
-                      <option value="archived">Archived</option>
-                    </select>
-                 </div>
-                 <div><label className="block text-xs font-bold text-modrinth-muted uppercase mb-1.5">{t('license_id')}</label><input type="text" value={formData.license?.id || ''} onChange={e => handleInputChange('license_id', e.target.value)} className="w-full bg-modrinth-bg border border-modrinth-border rounded-xl p-3.5 text-modrinth-text text-sm font-mono"/></div>
-              </div>
-            </section>
-            <section className="space-y-4">
-               <div className="flex items-center gap-2 text-modrinth-green mb-2 px-1"><Globe size={18} /><h3 className="font-bold uppercase tracking-wider text-sm">{t('links')}</h3></div>
-               <div className="bg-modrinth-card/75 backdrop-blur-xl p-5 rounded-3xl shadow-[0_10px_26px_rgba(0,0,0,0.22)] relative overflow-hidden space-y-4">
-                 {['source_url', 'issues_url', 'wiki_url', 'discord_url'].map((field) => (
-                   <div key={field}><label className="block text-xs font-bold text-modrinth-muted uppercase">{field.replace('_url', '')}</label><input type="url" value={formData[field as keyof ModrinthProject] as string || ''} onChange={e => handleInputChange(field, e.target.value)} className="w-full bg-modrinth-bg border border-modrinth-border rounded-xl p-3.5 text-modrinth-text text-sm" placeholder="https://..."/></div>
-                 ))}
-               </div>
-            </section>
-          </div>
-        )}
-        {activeTab === 'members' && (
-          <div className={`space-y-4 pb-24 ${animClass}`}>
-            <div className="flex justify-between items-center mb-2 px-1">
-              <div className="flex items-center gap-2 text-modrinth-green"><Users size={18} /><h3 className="font-bold uppercase tracking-wider text-sm">{t('manage_members')}</h3></div>
-              <button onClick={()=>setShowInviteModal(true)} className="bg-modrinth-green text-white p-2 rounded-lg active:scale-90"><UserPlus size={18}/></button>
-            </div>
-            {members.map(member => (
-              <div key={member.user.id} className="bg-modrinth-card/75 backdrop-blur-xl p-4 rounded-3xl flex flex-col gap-3 shadow-[0_10px_26px_rgba(0,0,0,0.22)] relative overflow-hidden">
-                 <div className="flex items-center gap-3 relative">
-                   <img src={member.user.avatar_url} className="w-10 h-10 rounded-lg bg-modrinth-bg" alt=""/>
-                   <div className="flex-1">
-                      <div className="text-modrinth-text font-bold">{member.user.username}</div>
-                   </div>
-                   {member.role !== 'Owner' && (
-                     <button onClick={() => handleRemoveMember(member.user.id)} className="p-2 bg-red-500/10 text-red-400 rounded-lg hover:bg-red-500/20"><Trash2 size={16}/></button>
-                   )}
-                 </div>
-                 
-                 <div className="flex items-center gap-2 pl-13 relative">
-                    <span className="text-xs text-modrinth-muted font-bold uppercase">{t('role')}:</span>
-                    {member.role === 'Owner' ? (
-                       <span className="text-xs text-modrinth-green font-bold px-2 py-1 bg-modrinth-bg rounded-lg">Owner</span>
-                    ) : (
-                      <>
-                        <div className="flex items-center gap-2">
-                          <input
-                            value={memberEdits[member.user.id]?.role || ''}
-                            onChange={(e) => setMemberEdits(prev => ({ ...prev, [member.user.id]: { ...(prev[member.user.id] || { role: '' }), role: e.target.value, permissions: prev[member.user.id]?.permissions || '', payouts_split: prev[member.user.id]?.payouts_split || '', ordering: prev[member.user.id]?.ordering || '' } }))}
-                            className="bg-modrinth-bg text-modrinth-text text-xs font-bold px-2 py-1 rounded-lg border border-modrinth-border outline-none focus:border-modrinth-green w-36"
-                            placeholder={t('custom_role_placeholder')}
-                          />
-                          <button
-                            onClick={() => handleRoleSave(member.user.id)}
-                            className="text-xs font-bold px-2 py-1 rounded-lg bg-modrinth-green/20 text-modrinth-green hover:bg-modrinth-green hover:text-white transition-colors"
-                            disabled={savingMemberId === member.user.id}
-                          >
-                            {savingMemberId === member.user.id ? '...' : t('save')}
-                          </button>
-                        </div>
-                      </>
-                    )}
-                 </div>
-
-                 {member.role !== 'Owner' && (
-                  <div className="grid grid-cols-2 gap-2 text-xs">
-                    <div className="col-span-2">
-                      <label className="block text-[10px] font-bold uppercase text-modrinth-muted mb-1">{t('permissions_label')}</label>
-                      <div className="bg-modrinth-bg/60 border border-modrinth-border rounded-xl p-2">
-                        <div className="grid grid-cols-2 gap-2">
-                          {permissionDefs.map(p => {
-                            const currentRaw = memberEdits[member.user.id]?.permissions;
-                            const currentVal = currentRaw !== '' && currentRaw !== undefined ? Number(currentRaw) : (member.permissions || 0);
-                            const isOn = !!(currentVal & (1 << p.bit));
-                            return (
-                              <button
-                                key={p.bit}
-                                type="button"
-                                onClick={() => {
-                                  const nextVal = isOn ? (currentVal & ~(1 << p.bit)) : (currentVal | (1 << p.bit));
-                                  setMemberEdits(prev => ({
-                                    ...prev,
-                                    [member.user.id]: {
-                                      ...(prev[member.user.id] || { role: member.role || '' }),
-                                      permissions: String(nextVal),
-                                      payouts_split: prev[member.user.id]?.payouts_split || '',
-                                      ordering: prev[member.user.id]?.ordering || ''
-                                    }
-                                  }));
-                                }}
-                                className={`flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-lg border transition-colors ${isOn ? 'bg-modrinth-green/20 text-modrinth-text border-modrinth-green/60' : 'bg-modrinth-bg text-modrinth-muted border-modrinth-border hover:border-modrinth-green'}`}
-                              >
-                                {isOn ? <Check size={12} /> : <span className="inline-block w-3" />}
-                                <span className="truncate">{p.label}</span>
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    </div>
-                    <div>
-                      <label className="block text-[10px] font-bold uppercase text-modrinth-muted mb-1">{t('payouts_split_label')}</label>
-                      <input
-                        value={memberEdits[member.user.id]?.payouts_split || ''}
-                        onChange={(e) => setMemberEdits(prev => ({ ...prev, [member.user.id]: { ...(prev[member.user.id] || { role: member.role || '' }), payouts_split: e.target.value, permissions: prev[member.user.id]?.permissions || '', ordering: prev[member.user.id]?.ordering || '' } }))}
-                        className="w-full bg-modrinth-bg text-modrinth-text text-xs px-2 py-1.5 rounded-lg border border-modrinth-border outline-none focus:border-modrinth-green"
-                        placeholder="e.g. 50"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[10px] font-bold uppercase text-modrinth-muted mb-1">{t('ordering_label')}</label>
-                      <input
-                        value={memberEdits[member.user.id]?.ordering || ''}
-                        onChange={(e) => setMemberEdits(prev => ({ ...prev, [member.user.id]: { ...(prev[member.user.id] || { role: member.role || '' }), ordering: e.target.value, permissions: prev[member.user.id]?.permissions || '', payouts_split: prev[member.user.id]?.payouts_split || '' } }))}
-                        className="w-full bg-modrinth-bg text-modrinth-text text-xs px-2 py-1.5 rounded-lg border border-modrinth-border outline-none focus:border-modrinth-green"
-                        placeholder="e.g. 0"
-                      />
-                    </div>
-                    <div className="flex items-end col-span-2">
-                      <button
-                        onClick={() => openTransferOwnership(member.user.id, member.user.username)}
-                        className="w-full text-xs font-bold px-2 py-2 rounded-lg bg-modrinth-bg text-modrinth-muted hover:text-modrinth-text hover:border-modrinth-green border border-modrinth-border"
-                      >
-                        {t('transfer_owner')}
-                      </button>
-                    </div>
-                  </div>
-                 )}
-
-                 {member.user.id === currentUserId && member.accepted === false && (
-                   <button
-                     onClick={handleJoinTeam}
-                     className="text-xs font-bold px-3 py-2 rounded-xl bg-modrinth-green text-white"
-                   >
-                     {t('accept_invite')}
-                   </button>
-                 )}
-              </div>
-            ))}
-          </div>
-        )}
-        </div>
-      </div>
-        );
-      })()}
-      <InviteMemberModal isOpen={showInviteModal} onClose={()=>setShowInviteModal(false)} onInvite={handleInvite} />
-
-      {transferCandidate && (
-        <div className="fixed inset-0 z-[190] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
-          <div className="bg-modrinth-card/90 backdrop-blur-xl w-full max-w-sm rounded-3xl p-5 shadow-[0_14px_36px_rgba(0,0,0,0.45)] border border-modrinth-border">
-            <h3 className="text-lg font-bold text-modrinth-text mb-2">{t('transfer_owner_title')}</h3>
-            <p className="text-sm text-modrinth-muted mb-4">
-              {t('transfer_owner_desc')} <span className="text-modrinth-text font-bold">{transferCandidate.name}</span>
-            </p>
-            <div className="flex gap-3">
-              <button
-                onClick={() => setTransferCandidate(null)}
-                className="flex-1 py-2.5 rounded-xl font-bold text-sm bg-modrinth-bg/60 text-modrinth-muted hover:text-modrinth-text"
-              >
-                {t('cancel')}
-              </button>
-              <button
-                onClick={handleTransferOwnership}
-                className="flex-1 py-2.5 rounded-xl font-bold text-sm bg-modrinth-green text-white"
-              >
-                {t('transfer_owner_confirm')}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {galleryPreviewUrl && (
-        <div
-          className="fixed inset-0 z-[190] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in"
-          onClick={() => setGalleryPreviewUrl(null)}
-        >
-          <div
-            className="relative w-full max-w-[95vw] max-h-[85vh] bg-modrinth-card/90 border border-modrinth-border rounded-2xl p-3 shadow-[0_20px_60px_rgba(0,0,0,0.6)]"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <button
-              onClick={() => setGalleryPreviewUrl(null)}
-              className="absolute -top-3 -right-3 bg-black/70 text-white p-2 rounded-full shadow-lg"
-              aria-label="Close preview"
-            >
-              <X size={16}/>
-            </button>
-            <img
-              src={galleryPreviewUrl}
-              alt="Gallery preview"
-              className="w-full h-full max-h-[75vh] object-contain rounded-xl bg-modrinth-bg"
-            />
-          </div>
-        </div>
-      )}
-
-      {selectedVersion && (
-        <div className={`fixed inset-0 z-[185] ${theme === 'light' ? 'bg-black/30' : 'bg-black/70'} backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in`}>
-          <div className={`${theme === 'light' ? 'bg-white/95 shadow-[0_14px_36px_rgba(0,0,0,0.2)]' : 'bg-modrinth-card/95 shadow-[0_18px_46px_rgba(0,0,0,0.48)]'} backdrop-blur-xl w-full max-w-2xl rounded-3xl max-h-[85vh] overflow-hidden`}>
-            <div className="p-5 border-b border-zinc-700/40 flex items-start justify-between gap-4">
-              <div className="min-w-0">
-                <div className="text-xs font-bold uppercase tracking-[0.14em] text-modrinth-muted mb-2">{t('version_details')}</div>
-                <h3 className="text-2xl font-bold text-modrinth-text break-words">{selectedVersion.name || selectedVersion.version_number}</h3>
-                <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-modrinth-muted">
-                  <span className="px-2.5 py-1 rounded-full bg-modrinth-bg text-modrinth-text font-semibold">{selectedVersion.version_number}</span>
-                  <span className={`px-2.5 py-1 rounded-full border font-bold uppercase ${
-                    selectedVersion.version_type === 'release' ? 'text-green-400 border-green-400/30 bg-green-400/10' :
-                    selectedVersion.version_type === 'beta' ? 'text-blue-400 border-blue-400/30 bg-blue-400/10' :
-                    'text-orange-400 border-orange-400/30 bg-orange-400/10'
-                  }`}>
-                    {t(selectedVersion.version_type)}
-                  </span>
-                </div>
-              </div>
-              <button
-                onClick={() => setSelectedVersion(null)}
-                className={theme === 'light' ? 'p-2 rounded-full hover:bg-black/5 text-black/60 hover:text-black transition-colors' : 'p-2 rounded-full hover:bg-modrinth-bg text-modrinth-muted hover:text-modrinth-text transition-colors'}
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            <div className="overflow-y-auto max-h-[calc(85vh-6rem)] p-5 space-y-5">
-              <div className="grid grid-cols-2 gap-3">
-                <div className="bg-modrinth-bg/70 rounded-2xl p-3">
-                  <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-modrinth-muted mb-1">{t('downloads')}</div>
-                  <div className="text-lg font-bold text-modrinth-text">{selectedVersion.downloads.toLocaleString()}</div>
-                </div>
-                <div className="bg-modrinth-bg/70 rounded-2xl p-3">
-                  <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-modrinth-muted mb-1">{t('published_on')}</div>
-                  <div className="text-lg font-bold text-modrinth-text">{new Date(selectedVersion.date_published).toLocaleDateString()}</div>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-modrinth-muted">{t('game_versions')}</div>
-                <div className="flex gap-2 overflow-x-auto no-scrollbar">
-                  {selectedVersion.game_versions.map((gameVersion) => (
-                    <span key={gameVersion} className="text-[11px] bg-modrinth-bg px-2.5 py-1.5 rounded-full text-modrinth-text whitespace-nowrap">
-                      {gameVersion}
-                    </span>
-                  ))}
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-modrinth-muted">{t('loaders')}</div>
-                <div className="flex gap-2 flex-wrap">
-                  {selectedVersion.loaders.map((loader) => (
-                    <span key={loader} className="text-[11px] font-bold uppercase text-modrinth-text/80 bg-modrinth-bg px-2.5 py-1.5 rounded-full">
-                      {loader}
-                    </span>
-                  ))}
-                </div>
-              </div>
-
-              <div className="bg-modrinth-bg/50 rounded-3xl p-4">
-                <div className="flex items-center justify-between gap-3 mb-3">
-                  <h4 className="text-lg font-bold text-modrinth-text">{t('changelog')}</h4>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSelectedVersion(null);
-                      openEditVersion(selectedVersion);
-                    }}
-                    className="text-xs font-bold px-3 py-2 rounded-2xl bg-modrinth-cardHover text-modrinth-text hover:bg-modrinth-border/60 transition-colors"
-                  >
-                    {t('edit')}
-                  </button>
-                </div>
-                {selectedVersion.changelog?.trim() ? (
-                  <React.Suspense fallback={<div className="text-modrinth-muted text-sm py-2">Loading changelog...</div>}>
-                    <MarkdownRenderer content={selectedVersion.changelog} className="markdown-preview text-sm text-modrinth-text/85" />
-                  </React.Suspense>
-                ) : (
-                  <p className="text-sm text-modrinth-muted">{t('no_changelog')}</p>
-                )}
-              </div>
-
-              <div className="bg-modrinth-bg/50 rounded-3xl p-4">
-                <h4 className="text-lg font-bold text-modrinth-text mb-3">{t('dependencies')}</h4>
-                {selectedVersionDepsLoading ? (
-                  <div className="flex justify-center py-6"><Loader2 className="animate-spin text-modrinth-green" /></div>
-                ) : selectedVersionDeps.length === 0 ? (
-                  <p className="text-sm text-modrinth-muted">{t('no_dependencies')}</p>
-                ) : (
-                  <div className="space-y-3">
-                    {selectedVersionDeps.map((dep, index) => (
-                      <div key={`${dep.project_id || dep.file_name || dep.version_id || index}`} className="flex items-center gap-3 bg-modrinth-card/80 rounded-2xl p-3">
-                        <div className="w-12 h-12 rounded-xl bg-modrinth-bg overflow-hidden flex items-center justify-center flex-shrink-0">
-                          {dep.icon_url ? (
-                            <img src={dep.icon_url} alt={dep.title || dep.project_id || 'Dependency'} className="w-full h-full object-cover" />
-                          ) : (
-                            <Package size={18} className="text-modrinth-muted opacity-70" />
-                          )}
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center justify-between gap-3">
-                            <div className="text-sm font-semibold text-modrinth-text truncate">{dep.title || dep.project_id || dep.file_name || dep.version_id}</div>
-                            <span className="text-[10px] uppercase tracking-[0.12em] text-modrinth-muted bg-modrinth-bg px-2 py-1 rounded-full">
-                              {dep.dependency_type}
-                            </span>
-                          </div>
-                          <div className="text-xs text-modrinth-muted mt-1 break-words">
-                            {dep.version_id || dep.project_id || dep.file_name}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <button
-                type="button"
-                onClick={() => setSelectedVersion(null)}
-                className="w-full py-3 rounded-2xl font-bold text-sm bg-modrinth-cardHover text-modrinth-text hover:bg-modrinth-border/60 transition-colors"
-              >
-                {t('close_details')}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {editingVersion && (
-        <div className={`fixed inset-0 z-[180] ${theme === 'light' ? 'bg-black/30' : 'bg-black/60'} backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in`}>
-          <div className={`${theme === 'light' ? 'bg-white/95 border border-black/10 shadow-[0_14px_36px_rgba(0,0,0,0.2)]' : 'bg-modrinth-card/85 shadow-[0_14px_36px_rgba(0,0,0,0.45)]'} backdrop-blur-xl w-full max-w-sm rounded-3xl p-5 animate-fade-in-up relative overflow-hidden`}>
-            <div className="relative">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-bold text-modrinth-text">Edit version</h3>
-              <button
-                onClick={() => setEditingVersion(null)}
-                className={theme === 'light' ? 'p-2 rounded-full hover:bg-black/5 text-black/60 hover:text-black transition-colors' : 'p-2 rounded-full hover:bg-modrinth-bg text-modrinth-muted hover:text-modrinth-text'}
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            <div className="space-y-3">
-              <div>
-                <label className="block text-xs font-bold text-modrinth-muted uppercase mb-1">Name</label>
-                <input
-                  className={`w-full rounded-2xl p-3 text-sm outline-none ${theme === 'light' ? 'bg-black/[0.04] text-black border border-black/10 focus:border-modrinth-green' : 'bg-modrinth-bg text-modrinth-text shadow-[inset_0_0_0_1px_rgba(255,255,255,0.04)] focus:shadow-[inset_0_0_0_1px_rgba(74,222,128,0.45)]'}`}
-                  value={editingVersionName}
-                  onChange={e => setEditingVersionName(e.target.value)}
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-modrinth-muted uppercase mb-1">Type</label>
-                <select
-                  className={`w-full rounded-2xl p-3 text-sm outline-none ${theme === 'light' ? 'bg-black/[0.04] text-black border border-black/10 focus:border-modrinth-green' : 'bg-modrinth-bg text-modrinth-text shadow-[inset_0_0_0_1px_rgba(255,255,255,0.04)] focus:shadow-[inset_0_0_0_1px_rgba(74,222,128,0.45)]'}`}
-                  value={editingVersionType}
-                  onChange={e => setEditingVersionType(e.target.value as any)}
+            <div className="app-panel-soft p-3">
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => avatarInputRef.current?.click()}
+                  className="group relative h-20 w-20 shrink-0 overflow-hidden rounded-lg border border-modrinth-border bg-modrinth-bg"
                 >
-                  <option value="release">Release</option>
-                  <option value="beta">Beta</option>
-                  <option value="alpha">Alpha</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-modrinth-muted uppercase mb-1">Changelog</label>
-                <textarea
-                  className={`w-full rounded-2xl p-3 text-xs outline-none h-24 resize-none ${theme === 'light' ? 'bg-black/[0.04] text-black border border-black/10 focus:border-modrinth-green' : 'bg-modrinth-bg text-modrinth-text shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03),inset_0_0_0_2px_rgba(0,0,0,0.22)] focus:shadow-[inset_0_0_0_1px_rgba(74,222,128,0.35),inset_0_0_0_2px_rgba(0,0,0,0.22)]'}`}
-                  value={editingVersionChangelog}
-                  onChange={e => setEditingVersionChangelog(e.target.value)}
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-modrinth-muted uppercase mb-1">Game Versions</label>
-                <div className="flex flex-wrap gap-1.5">
-                  {allGameVersions.map(gv => {
-                    const active = editingVersionGameVersions.includes(gv);
-                    return (
-                      <button
-                        key={gv}
-                        type="button"
-                        onClick={() => setEditingVersionGameVersions(prev => prev.includes(gv) ? prev.filter(x => x !== gv) : [...prev, gv])}
-                        className={`px-2 py-1 rounded-full text-[10px] ${active ? 'bg-modrinth-green/20 text-modrinth-text shadow-[inset_0_0_0_1px_rgba(74,222,128,0.45),inset_0_0_0_2px_rgba(0,0,0,0.22)]' : theme === 'light' ? 'bg-black/5 text-black/60 border border-black/10' : 'bg-modrinth-bg text-modrinth-muted shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03),inset_0_0_0_2px_rgba(0,0,0,0.22)]'}`}
-                      >
-                        {gv}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-modrinth-muted uppercase mb-1">Dependencies</label>
-                <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
-                  {editingVersionDependencies.map((dep, idx) => {
-                    const meta = deps.find(d => d.project_id && d.project_id === dep.project_id);
-                    return (
-                      <div key={idx} className={`flex items-center justify-between rounded-2xl px-3 py-1.5 text-[11px] ${theme === 'light' ? 'bg-black/5 border border-black/10' : 'bg-modrinth-bg shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03),inset_0_0_0_2px_rgba(0,0,0,0.22)]'}`}>
-                        <div className="flex items-center gap-2 mr-2 min-w-0">
-                          <div className={`w-7 h-7 rounded-lg overflow-hidden flex-shrink-0 flex items-center justify-center ${theme === 'light' ? 'bg-white border border-black/10' : 'bg-modrinth-card shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03),inset_0_0_0_2px_rgba(0,0,0,0.22)]'}`}>
-                            {meta?.icon_url ? (
-                              <img src={meta.icon_url} className="w-full h-full object-cover" />
-                            ) : (
-                              <Package size={14} className="text-modrinth-muted" />
-                            )}
-                          </div>
-                          <div className="flex flex-col min-w-0">
-                            <span className="text-modrinth-text truncate text-xs">{meta?.title || dep.project_id || dep.file_name || dep.version_id || 'unknown'}</span>
-                            <div className="flex items-center gap-1 mt-0.5">
-                              <span className="text-[10px] text-modrinth-muted uppercase">Type:</span>
-                              <select
-                                className={`rounded-lg px-2 py-0.5 text-[10px] outline-none ${theme === 'light' ? 'bg-white text-black border border-black/10' : 'bg-modrinth-bg text-modrinth-text shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03),inset_0_0_0_2px_rgba(0,0,0,0.22)]'}`}
-                                value={dep.dependency_type}
-                                onChange={e => {
-                                  const val = e.target.value as 'required' | 'optional' | 'incompatible' | 'embedded';
-                                  setEditingVersionDependencies(prev => prev.map((d, i) => i === idx ? { ...d, dependency_type: val } : d));
-                                }}
-                              >
-                                <option value="required">required</option>
-                                <option value="optional">optional</option>
-                                <option value="incompatible">incompatible</option>
-                                <option value="embedded">embedded</option>
-                              </select>
-                            </div>
-                          </div>
-                        </div>
-                        <button
-                          type="button"
-                          className="text-red-400 text-[10px] px-2 py-1 rounded-lg bg-red-500/10 hover:bg-red-500/20"
-                          onClick={() => setEditingVersionDependencies(prev => prev.filter((_, i) => i !== idx))}
-                        >
-                          Remove
-                        </button>
-                      </div>
-                    );
-                  })}
-                  {editingVersionDependencies.length === 0 && (
-                    <p className="text-[11px] text-modrinth-muted">No dependencies</p>
+                  {avatarPreview && !removeAvatar ? (
+                    <img src={avatarPreview} alt="" className="h-full w-full object-cover" />
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center text-modrinth-muted">
+                      <ImageIcon size={26} />
+                    </div>
                   )}
-                </div>
-
-                <div className="mt-2 flex flex-wrap gap-2">
-                  <input
-                    type="text"
-                    placeholder="project id or slug"
-                    className="flex-1 bg-modrinth-bg rounded-xl px-3 py-2 text-[11px] text-modrinth-text outline-none shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03),inset_0_0_0_2px_rgba(0,0,0,0.22)] focus:shadow-[inset_0_0_0_1px_rgba(74,222,128,0.35),inset_0_0_0_2px_rgba(0,0,0,0.22)]"
-                    ref={depInputRef}
-                    onKeyDown={e => {
-                      if (e.key === 'Enter') {
-                        const value = e.currentTarget.value.trim();
-                        if (!value) return;
-                        void handleAddDependency(value);
-                        e.currentTarget.value = '';
-                      }
-                    }}
-                  />
-                  <select
-                    className="bg-modrinth-bg rounded-xl px-2 py-2 text-[11px] text-modrinth-text outline-none shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03),inset_0_0_0_2px_rgba(0,0,0,0.22)]"
-                    value={newDepType}
-                    onChange={e => setNewDepType(e.target.value as any)}
-                  >
-                    <option value="required">required</option>
-                    <option value="optional">optional</option>
-                    <option value="incompatible">incompatible</option>
-                    <option value="embedded">embedded</option>
-                  </select>
-                  <button
-                    type="button"
-                    className="px-3 py-2 rounded-xl bg-modrinth-bg text-[11px] text-modrinth-muted hover:text-modrinth-text shrink-0 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03),inset_0_0_0_2px_rgba(0,0,0,0.22)]"
-                    onClick={() => {
-                      const input = depInputRef.current;
-                      if (!input || !input.value) return;
-                      const value = input.value.trim();
-                      if (!value) return;
-                      void handleAddDependency(value);
-                      input.value = '';
-                    }}
-                  >
-                    Add
-                  </button>
+                  <span className="absolute inset-x-0 bottom-0 flex items-center justify-center gap-1 bg-black/70 px-1.5 py-1 text-[10px] font-bold text-white opacity-0 transition-opacity group-hover:opacity-100">
+                    <Upload size={11} />
+                    {t('change')}
+                  </span>
+                </button>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-extrabold text-modrinth-text">{t('avatar')}</p>
+                  <p className="mt-1 text-xs leading-relaxed text-modrinth-muted">{t('avatar_file_hint')}</p>
+                  {avatarFile && <p className="mt-1 truncate text-xs font-semibold text-modrinth-text">{avatarFile.name}</p>}
+                  {removeAvatar && <p className="mt-1 text-xs font-semibold text-red-400">{t('remove_avatar_pending')}</p>}
                 </div>
               </div>
-
-              <div>
-                <label className="block text-xs font-bold text-modrinth-muted uppercase mb-1">Loaders</label>
-                <div className="flex flex-wrap gap-1.5">
-                  {allLoaders.map(ld => {
-                    const active = editingVersionLoaders.includes(ld);
-                    return (
-                      <button
-                        key={ld}
-                        type="button"
-                        onClick={() => setEditingVersionLoaders(prev => prev.includes(ld) ? prev.filter(x => x !== ld) : [...prev, ld])}
-                        className={`px-2 py-1 rounded-full text-[10px] uppercase ${active ? 'bg-modrinth-green/20 text-modrinth-text shadow-[inset_0_0_0_1px_rgba(74,222,128,0.45),inset_0_0_0_2px_rgba(0,0,0,0.22)]' : 'bg-modrinth-bg text-modrinth-muted shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03),inset_0_0_0_2px_rgba(0,0,0,0.22)]'}`}
-                      >
-                        {ld}
-                      </button>
-                    );
-                  })}
-                </div>
+              <input
+                ref={avatarInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/gif,image/webp"
+                className="hidden"
+                onChange={event => handleAvatarFile(event.target.files?.[0])}
+              />
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => avatarInputRef.current?.click()}
+                  className="flex items-center justify-center gap-2 rounded-lg border border-modrinth-border bg-modrinth-bg px-3 py-2 text-xs font-extrabold text-modrinth-text transition-colors hover:border-modrinth-green"
+                >
+                  <Upload size={14} />
+                  {t('upload')}
+                </button>
+                <button
+                  type="button"
+                  onClick={avatarFile || removeAvatar ? handleResetAvatar : handleRemoveAvatar}
+                  className="flex items-center justify-center gap-2 rounded-lg border border-modrinth-border bg-modrinth-bg px-3 py-2 text-xs font-extrabold text-modrinth-muted transition-colors hover:border-red-500/50 hover:text-red-400"
+                >
+                  {avatarFile || removeAvatar ? <RefreshCw size={14} /> : <Trash2 size={14} />}
+                  {avatarFile || removeAvatar ? t('reset') : t('remove')}
+                </button>
               </div>
+              {avatarError && <p className="mt-2 text-xs font-semibold text-red-400">{avatarError}</p>}
             </div>
-
-            <div className="flex gap-3 mt-5">
-              <button
-                onClick={() => setEditingVersion(null)}
-                className="flex-1 py-3 rounded-xl text-sm font-bold bg-modrinth-bg text-modrinth-muted hover:text-modrinth-text hover:bg-modrinth-cardHover"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSaveVersion}
-                disabled={savingVersion}
-                className="flex-1 py-3 rounded-xl text-sm font-bold bg-modrinth-green text-white flex items-center justify-center active:scale-95"
-              >
-                {savingVersion ? <Loader2 size={16} className="animate-spin" /> : 'Save'}
-              </button>
+            <div>
+              <label className="app-form-label">{t('username')}</label>
+              <input className="app-input" value={data.username} onChange={e=>setData({...data, username:e.target.value})} />
             </div>
+            <div>
+              <label className="app-form-label">{t('bio')}</label>
+              <textarea className="app-input app-textarea min-h-[7rem]" value={data.bio} onChange={e=>setData({...data, bio:e.target.value})} />
             </div>
           </div>
         </div>
-      )}
+        <div className="grid shrink-0 grid-cols-2 gap-2 border-t border-modrinth-border px-5 py-4">
+          <button type="button" onClick={requestClose} disabled={saving} className="app-command px-3 py-3 text-sm font-extrabold disabled:opacity-60">
+            {t('cancel')}
+          </button>
+          <button type="button" onClick={handleSave} disabled={saving} className="app-primary flex items-center justify-center gap-2 px-3 py-3 text-sm disabled:opacity-60">
+            {saving ? <Loader2 className="animate-spin" size={16} /> : <Save size={16} />}
+            {t('save')}
+          </button>
+        </div>
+      </div>
     </div>
   );
 };
@@ -2788,6 +1326,7 @@ const AnalyticsPage: React.FC<{ user: ModrinthUser; token: string }> = ({ user, 
   const [projects, setProjects] = useState<ModrinthProject[]>([]);
   const [loading, setLoading] = useState(true);
   const [metric, setMetric] = useState<'downloads' | 'followers'>('downloads');
+  const [analyticsRangeDays, setAnalyticsRangeDays] = useState<7 | 30 | 90>(7);
   const [profileUser, setProfileUser] = useState<ModrinthUser>(user);
   const [profileStatus, setProfileStatus] = useState<number | null>(null);
   const [payoutHistory, setPayoutHistory] = useState<ModrinthPayoutHistory | null>(null);
@@ -3050,13 +1589,102 @@ const AnalyticsPage: React.FC<{ user: ModrinthUser; token: string }> = ({ user, 
       : null;
 
   const weeklySnapshotStorageKey = useMemo(() => `rinthy_analytics_snapshots_${user.id}`, [user.id]);
+  const analyticsRangeResetStorageKey = useMemo(() => `${weeklySnapshotStorageKey}_range_resets`, [weeklySnapshotStorageKey]);
   const [weeklyResetTick, setWeeklyResetTick] = useState(0);
   const [weeklyClock, setWeeklyClock] = useState(() => Date.now());
 
+  const rangeResetBaseline = useMemo(() => {
+    try {
+      const raw = localStorage.getItem(analyticsRangeResetStorageKey);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw) as Record<string, AnalyticsSnapshot>;
+      const snapshot = parsed[String(analyticsRangeDays)];
+      if (!snapshot || typeof snapshot.capturedAt !== 'number' || !snapshot.projects || typeof snapshot.projects !== 'object') return null;
+      return snapshot;
+    } catch {
+      return null;
+    }
+  }, [analyticsRangeDays, analyticsRangeResetStorageKey, weeklyResetTick]);
+
   const weeklySummary = useMemo(
-    () => calculateWeeklySummary(projects, readAnalyticsSnapshots(weeklySnapshotStorageKey), weeklyRevenueLifetime, weeklyClock),
-    [projects, weeklySnapshotStorageKey, weeklyClock, weeklyResetTick, weeklyRevenueLifetime]
+    () => calculateWeeklySummary(projects, readAnalyticsSnapshots(weeklySnapshotStorageKey), weeklyRevenueLifetime, weeklyClock, analyticsRangeDays, rangeResetBaseline),
+    [projects, weeklySnapshotStorageKey, weeklyClock, weeklyResetTick, weeklyRevenueLifetime, analyticsRangeDays, rangeResetBaseline]
   );
+
+  const topMovers = useMemo(
+    () => weeklySummary.projectDeltas.filter((project) => project.downloads > 0 || project.followers > 0).slice(0, 5),
+    [weeklySummary.projectDeltas]
+  );
+
+  const projectHealth = useMemo(() => {
+    const now = weeklyClock;
+    const daysSince = (date: string | undefined) => {
+      const timestamp = date ? new Date(date).getTime() : 0;
+      if (!Number.isFinite(timestamp) || timestamp <= 0) return null;
+      return Math.max(0, Math.floor((now - timestamp) / (24 * 60 * 60 * 1000)));
+    };
+
+    const staleProjects = projects
+      .map((project) => ({ project, days: daysSince(project.updated) }))
+      .filter((item): item is { project: ModrinthProject; days: number } => item.days !== null && item.days >= 60)
+      .sort((a, b) => b.days - a.days)
+      .slice(0, 3);
+
+    const hiddenProjects = projects.filter((project) => ['draft', 'unlisted', 'archived', 'processing', 'rejected'].includes(project.status));
+    const missingIcons = projects.filter((project) => !project.icon_url);
+    const missingLinks = projects.filter((project) => !project.source_url && !project.issues_url && !project.wiki_url && !project.discord_url);
+    const weakDescriptions = projects.filter((project) => !project.body?.trim() || project.body.trim().length < 160);
+
+    const issues = [
+      {
+        key: 'stale',
+        icon: <Clock size={17} />,
+        label: t('health_stale_projects'),
+        value: staleProjects.length,
+        detail: staleProjects.length > 0 ? staleProjects.map(({ project, days }) => `${project.title} (${days}d)`).join(', ') : t('health_ok')
+      },
+      {
+        key: 'hidden',
+        icon: <EyeOff size={17} />,
+        label: t('health_hidden_projects'),
+        value: hiddenProjects.length,
+        detail: hiddenProjects.length > 0 ? hiddenProjects.slice(0, 3).map((project) => `${project.title} · ${project.status}`).join(', ') : t('health_ok')
+      },
+      {
+        key: 'icons',
+        icon: <ImageIcon size={17} />,
+        label: t('health_missing_icons'),
+        value: missingIcons.length,
+        detail: missingIcons.length > 0 ? missingIcons.slice(0, 3).map((project) => project.title).join(', ') : t('health_ok')
+      },
+      {
+        key: 'links',
+        icon: <ExternalLink size={17} />,
+        label: t('health_missing_links'),
+        value: missingLinks.length,
+        detail: missingLinks.length > 0 ? missingLinks.slice(0, 3).map((project) => project.title).join(', ') : t('health_ok')
+      },
+      {
+        key: 'descriptions',
+        icon: <FileText size={17} />,
+        label: t('health_weak_descriptions'),
+        value: weakDescriptions.length,
+        detail: weakDescriptions.length > 0 ? weakDescriptions.slice(0, 3).map((project) => project.title).join(', ') : t('health_ok')
+      }
+    ];
+
+    const score = projects.length === 0
+      ? 100
+      : Math.max(0, Math.round(100 - (
+          staleProjects.length * 12 +
+          hiddenProjects.length * 8 +
+          missingIcons.length * 6 +
+          missingLinks.length * 4 +
+          weakDescriptions.length * 4
+        ) / Math.max(1, projects.length)));
+
+    return { score, issues };
+  }, [projects, t, weeklyClock]);
 
   useEffect(() => {
     if (loading || projects.length === 0) return;
@@ -3091,20 +1719,24 @@ const AnalyticsPage: React.FC<{ user: ModrinthUser; token: string }> = ({ user, 
     const snapshot = createAnalyticsSnapshot(projects, now, weeklyRevenueLifetime);
 
     try {
-      localStorage.setItem(weeklySnapshotStorageKey, JSON.stringify([snapshot]));
+      const raw = localStorage.getItem(analyticsRangeResetStorageKey);
+      const parsed = raw ? JSON.parse(raw) : {};
+      const next = parsed && typeof parsed === 'object' ? parsed : {};
+      next[String(analyticsRangeDays)] = snapshot;
+      localStorage.setItem(analyticsRangeResetStorageKey, JSON.stringify(next));
     } catch {
-      // Ignore storage errors; the next analytics load will rebuild the baseline.
+      // Ignore storage errors; the next analytics load will keep using the regular range baseline.
     }
 
     setWeeklyResetTick((value) => value + 1);
     setWeeklyClock(now);
-  }, [projects, weeklyRevenueLifetime, weeklySnapshotStorageKey]);
+  }, [analyticsRangeDays, analyticsRangeResetStorageKey, projects, weeklyRevenueLifetime]);
 
   if (loading) return <div className="flex justify-center pt-40 animate-fade-in"><Loader2 className="animate-spin text-modrinth-green" /></div>;
 
   return (
     <div className="px-4 pb-32 animate-fade-in">
-      <header className="flex items-center justify-between mb-6 sticky top-0 z-50 backdrop-blur-xl pt-[calc(env(safe-area-inset-top)+0.85rem)] pb-3 -mx-4 px-4 min-h-[84px] shadow-[0_8px_24px_rgba(0,0,0,0.35)] overflow-hidden relative transition-colors duration-300" style={{ backgroundColor: 'rgba(var(--card-rgb), 0.7)' }}>
+      <header className="app-topbar flex items-center justify-between mb-5 sticky top-0 z-50 pt-[calc(env(safe-area-inset-top)+0.85rem)] pb-3 -mx-4 px-4 min-h-[82px] overflow-hidden relative transition-colors duration-300">
         <div className="flex flex-col gap-1">
           <h1 className="text-2xl font-bold text-modrinth-text leading-none">{t('analytics')}</h1>
           <p className="text-modrinth-muted text-xs font-medium">{t('dev_panel')}</p>
@@ -3119,7 +1751,7 @@ const AnalyticsPage: React.FC<{ user: ModrinthUser; token: string }> = ({ user, 
       </header>
 
       {isDebugEnabled && (
-        <div className="bg-modrinth-card/70 backdrop-blur-xl p-4 rounded-2xl border border-modrinth-border mb-6">
+        <div className="app-panel p-4 mb-6">
           <div className="text-xs font-bold uppercase tracking-wider text-modrinth-muted mb-2">Debug: payouts/balance</div>
           <pre className="text-[11px] leading-snug text-modrinth-text whitespace-pre-wrap break-words select-text">
             {JSON.stringify(
@@ -3185,36 +1817,32 @@ const AnalyticsPage: React.FC<{ user: ModrinthUser; token: string }> = ({ user, 
         </div>
       )}
 
-      <div className={`p-6 rounded-3xl border mb-6 relative overflow-hidden shadow-lg animate-fade-in-up ${theme === 'light' ? 'bg-modrinth-green border-modrinth-green text-white' : 'bg-gradient-to-br from-emerald-900/40 to-modrinth-card border-emerald-500/20 text-modrinth-text shadow-emerald-900/20'}`}>
-        <div className={`absolute top-0 right-0 p-6 ${theme === 'light' ? 'opacity-20 text-emerald-900' : 'opacity-20 text-emerald-400'}`}><Wallet size={80} /></div>
+      <div className="app-panel p-6 mb-6 relative overflow-hidden animate-fade-in-up">
+        <div className="absolute left-0 top-0 h-full w-1 bg-modrinth-green" />
         <div className="relative z-10">
-          <div className={`flex items-center gap-2 mb-1 ${theme === 'light' ? 'text-white/90' : 'text-emerald-400'}`}><DollarSign size={16} /><span className="text-xs font-bold uppercase tracking-wider">{t('total_revenue')}</span></div>
-          <div className="text-4xl font-bold mb-4">${Number((payoutLifetimeFromV3 ?? stats.lifetimeEarnings) || 0).toFixed(2)}</div>
+          <div className="flex items-center gap-2 mb-1 text-modrinth-green"><DollarSign size={16} /><span className="app-subtle-label text-modrinth-green">{t('total_revenue')}</span></div>
+          <div className="text-4xl font-extrabold mb-4 text-modrinth-text">${Number((payoutLifetimeFromV3 ?? stats.lifetimeEarnings) || 0).toFixed(2)}</div>
           <div className="flex gap-3 flex-wrap">
-            <div className={`px-3 py-1.5 rounded-lg border backdrop-blur-sm ${theme === 'light' ? 'bg-black/10 border-white/20' : 'bg-modrinth-bg/50 border-modrinth-border'}`}>
-              <span className={`text-[10px] uppercase block ${theme === 'light' ? 'text-white/70' : 'text-emerald-200'}`}>{t('wallet')}</span>
-              <span className="text-sm font-mono">{profileUser.payout_data?.currency || 'USD'}</span>
-            </div>
-            <div className={`px-3 py-1.5 rounded-lg border backdrop-blur-sm ${theme === 'light' ? 'bg-black/10 border-white/20' : 'bg-modrinth-bg/50 border-modrinth-border'}`}>
-              <span className={`text-[10px] uppercase block ${theme === 'light' ? 'text-white/70' : 'text-emerald-200'}`}>{t('balance')}</span>
-              <span className="text-sm font-mono">${Number((payoutBalanceTotalFromV3 ?? stats.walletBalance) || 0).toFixed(2)}</span>
+            <div className="app-panel-soft px-3 py-1.5">
+              <span className="app-subtle-label block">{t('balance')}</span>
+              <span className="text-sm font-mono text-modrinth-text">${Number((payoutBalanceTotalFromV3 ?? stats.walletBalance) || 0).toFixed(2)}</span>
             </div>
             {payoutBalanceFromV3 !== null && (
-              <div className={`px-3 py-1.5 rounded-lg border backdrop-blur-sm ${theme === 'light' ? 'bg-black/10 border-white/20' : 'bg-modrinth-bg/50 border-modrinth-border'}`}>
-                <span className={`text-[10px] uppercase block ${theme === 'light' ? 'text-white/70' : 'text-emerald-200'}`}>{t('available')}</span>
-                <span className="text-sm font-mono">${Number(payoutBalanceFromV3 || 0).toFixed(2)}</span>
+              <div className="app-panel-soft px-3 py-1.5">
+                <span className="app-subtle-label block">{t('available')}</span>
+                <span className="text-sm font-mono text-modrinth-text">${Number(payoutBalanceFromV3 || 0).toFixed(2)}</span>
               </div>
             )}
             {payoutPendingFromV3 !== null && (
-              <div className={`px-3 py-1.5 rounded-lg border backdrop-blur-sm ${theme === 'light' ? 'bg-black/10 border-white/20' : 'bg-modrinth-bg/50 border-modrinth-border'}`}>
-                <span className={`text-[10px] uppercase block ${theme === 'light' ? 'text-white/70' : 'text-emerald-200'}`}>{t('pending')}</span>
-                <span className="text-sm font-mono">${Number(payoutPendingFromV3 || 0).toFixed(2)}</span>
+              <div className="app-panel-soft px-3 py-1.5">
+                <span className="app-subtle-label block">{t('pending')}</span>
+                <span className="text-sm font-mono text-modrinth-text">${Number(payoutPendingFromV3 || 0).toFixed(2)}</span>
               </div>
             )}
             {payoutWithdrawnLifetimeFromV3 !== null && (
-              <div className={`px-3 py-1.5 rounded-lg border backdrop-blur-sm ${theme === 'light' ? 'bg-black/10 border-white/20' : 'bg-modrinth-bg/50 border-modrinth-border'}`}>
-                <span className={`text-[10px] uppercase block ${theme === 'light' ? 'text-white/70' : 'text-emerald-200'}`}>{t('withdrawn')}</span>
-                <span className="text-sm font-mono">${Number(payoutWithdrawnLifetimeFromV3 || 0).toFixed(2)}</span>
+              <div className="app-panel-soft px-3 py-1.5">
+                <span className="app-subtle-label block">{t('withdrawn')}</span>
+                <span className="text-sm font-mono text-modrinth-text">${Number(payoutWithdrawnLifetimeFromV3 || 0).toFixed(2)}</span>
               </div>
             )}
           </div>
@@ -3233,7 +1861,7 @@ const AnalyticsPage: React.FC<{ user: ModrinthUser; token: string }> = ({ user, 
       </div>
 
       <div className="grid grid-cols-2 gap-4 mb-8 animate-fade-in-up" style={{ animationDelay: '0.1s' }}>
-        <div className="bg-modrinth-card/75 backdrop-blur-xl p-5 rounded-3xl shadow-[0_10px_26px_rgba(0,0,0,0.22)] relative overflow-hidden">
+        <div className="app-panel p-5 relative overflow-hidden">
           <div className="flex items-center justify-between mb-2">
             <div className="text-modrinth-green"><FileText /></div>
             <div className="text-[10px] uppercase text-modrinth-muted font-bold">{t('projects_label')}</div>
@@ -3241,7 +1869,7 @@ const AnalyticsPage: React.FC<{ user: ModrinthUser; token: string }> = ({ user, 
           <div className="text-2xl font-bold text-modrinth-text">{projects.length.toLocaleString()}</div>
           <div className="text-xs text-modrinth-muted">{t('total_label')}</div>
         </div>
-        <div className="bg-modrinth-card/75 backdrop-blur-xl p-5 rounded-3xl shadow-[0_10px_26px_rgba(0,0,0,0.22)] relative overflow-hidden">
+        <div className="app-panel p-5 relative overflow-hidden">
           <div className="flex items-center justify-between mb-2">
             <div className="text-modrinth-green"><Download /></div>
             <div className="text-[10px] uppercase text-modrinth-muted font-bold">{t('downloads_label')}</div>
@@ -3249,7 +1877,7 @@ const AnalyticsPage: React.FC<{ user: ModrinthUser; token: string }> = ({ user, 
           <div className="text-2xl font-bold text-modrinth-text">{stats.totalDownloads.toLocaleString()}</div>
           <div className="text-xs text-modrinth-muted">{t('total_downloads')}</div>
         </div>
-        <div className="bg-modrinth-card/75 backdrop-blur-xl p-5 rounded-3xl shadow-[0_10px_26px_rgba(0,0,0,0.22)] relative overflow-hidden">
+        <div className="app-panel p-5 relative overflow-hidden">
           <div className="flex items-center justify-between mb-2">
             <div className="text-red-400"><Heart /></div>
             <div className="text-[10px] uppercase text-modrinth-muted font-bold">{t('follows_label')}</div>
@@ -3257,7 +1885,7 @@ const AnalyticsPage: React.FC<{ user: ModrinthUser; token: string }> = ({ user, 
           <div className="text-2xl font-bold text-modrinth-text">{stats.totalLikes.toLocaleString()}</div>
           <div className="text-xs text-modrinth-muted">{t('total_likes')}</div>
         </div>
-        <div className="bg-modrinth-card/75 backdrop-blur-xl p-5 rounded-3xl shadow-[0_10px_26px_rgba(0,0,0,0.22)] relative overflow-hidden">
+        <div className="app-panel p-5 relative overflow-hidden">
           <div className="flex items-center justify-between mb-2">
             <div className="text-modrinth-green"><Activity /></div>
             <div className="text-[10px] uppercase text-modrinth-muted font-bold">{t('avg_label')}</div>
@@ -3269,9 +1897,23 @@ const AnalyticsPage: React.FC<{ user: ModrinthUser; token: string }> = ({ user, 
 
       <div className="mb-8 animate-fade-in-up" style={{ animationDelay: '0.12s' }}>
         <div className="flex items-center justify-between mb-3">
-          <h3 className="text-sm font-bold text-modrinth-muted uppercase">{t('weekly_summary')}</h3>
+          <h3 className="text-sm font-bold text-modrinth-muted uppercase">{t('range_summary')}</h3>
           <div className="flex items-center gap-2">
-            <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-modrinth-muted">{t('last_7_days')}</div>
+            <div className="flex rounded-xl border border-modrinth-border bg-modrinth-bg p-1">
+              {[7, 30, 90].map((days) => (
+                <button
+                  key={days}
+                  onClick={() => setAnalyticsRangeDays(days as 7 | 30 | 90)}
+                  className={`min-w-10 rounded-lg px-2.5 py-1 text-[10px] font-extrabold transition-all duration-200 active:scale-95 ${
+                    analyticsRangeDays === days
+                      ? 'bg-modrinth-green/18 text-modrinth-green shadow-[0_0_0_1px_rgba(56,193,114,0.18)]'
+                      : 'text-modrinth-muted hover:text-modrinth-text'
+                  }`}
+                >
+                  {days}d
+                </button>
+              ))}
+            </div>
             <button
               onClick={resetWeeklySummary}
               className="px-2.5 py-1 rounded-lg bg-modrinth-card border border-modrinth-border text-[10px] font-bold uppercase text-modrinth-muted hover:text-modrinth-text hover:border-modrinth-green/40 active:scale-95 transition-all"
@@ -3280,25 +1922,25 @@ const AnalyticsPage: React.FC<{ user: ModrinthUser; token: string }> = ({ user, 
             </button>
           </div>
         </div>
-        <div className="bg-modrinth-card/75 backdrop-blur-xl p-5 rounded-3xl shadow-[0_10px_26px_rgba(0,0,0,0.22)] relative overflow-hidden">
+        <div className="app-panel p-5 relative overflow-hidden">
           <div className="grid grid-cols-2 gap-3 relative">
-            <div className="bg-modrinth-bg/40 rounded-2xl p-4">
+            <div className="app-panel-soft p-4">
               <div className="flex items-center justify-between mb-2">
                 <Download size={18} className="text-modrinth-green" />
                 <span className="text-[10px] uppercase text-modrinth-muted font-bold">{t('downloads_label')}</span>
               </div>
               <div className="text-2xl font-bold text-modrinth-text">+{weeklySummary.downloads.toLocaleString()}</div>
-              <div className="text-xs text-modrinth-muted">{t('weekly_downloads')}</div>
+              <div className="text-xs text-modrinth-muted">{analyticsRangeDays}d</div>
             </div>
-            <div className="bg-modrinth-bg/40 rounded-2xl p-4">
+            <div className="app-panel-soft p-4">
               <div className="flex items-center justify-between mb-2">
                 <Heart size={18} className="text-red-400" />
                 <span className="text-[10px] uppercase text-modrinth-muted font-bold">{t('follows_label')}</span>
               </div>
               <div className="text-2xl font-bold text-modrinth-text">+{weeklySummary.followers.toLocaleString()}</div>
-              <div className="text-xs text-modrinth-muted">{t('weekly_follows')}</div>
+              <div className="text-xs text-modrinth-muted">{analyticsRangeDays}d</div>
             </div>
-            <div className="bg-modrinth-bg/40 rounded-2xl p-4">
+            <div className="app-panel-soft p-4">
               <div className="flex items-center justify-between mb-2">
                 <DollarSign size={18} className="text-modrinth-green" />
                 <span className="text-[10px] uppercase text-modrinth-muted font-bold">{t('payouts')}</span>
@@ -3306,9 +1948,9 @@ const AnalyticsPage: React.FC<{ user: ModrinthUser; token: string }> = ({ user, 
               <div className="text-2xl font-bold text-modrinth-text">
                 {weeklySummary.revenue === null ? '--' : `+$${weeklySummary.revenue.toFixed(2)}`}
               </div>
-              <div className="text-xs text-modrinth-muted">{t('weekly_revenue')}</div>
+              <div className="text-xs text-modrinth-muted">{analyticsRangeDays}d</div>
             </div>
-            <div className="bg-modrinth-bg/40 rounded-2xl p-4">
+            <div className="app-panel-soft p-4">
               <div className="flex items-center justify-between mb-2">
                 <Activity size={18} className="text-modrinth-green" />
                 <span className="text-[10px] uppercase text-modrinth-muted font-bold">{t('active_label')}</span>
@@ -3316,7 +1958,7 @@ const AnalyticsPage: React.FC<{ user: ModrinthUser; token: string }> = ({ user, 
               <div className="text-2xl font-bold text-modrinth-text">{weeklySummary.activeProjects.toLocaleString()}</div>
               <div className="text-xs text-modrinth-muted">{t('active_projects_week')}</div>
             </div>
-            <div className="bg-modrinth-bg/40 rounded-2xl p-4 min-w-0">
+            <div className="app-panel-soft p-4 min-w-0">
               <div className="flex items-center justify-between mb-2">
                 <Calendar size={18} className="text-modrinth-green" />
                 <span className="text-[10px] uppercase text-modrinth-muted font-bold">{t('tracked_label')}</span>
@@ -3326,7 +1968,7 @@ const AnalyticsPage: React.FC<{ user: ModrinthUser; token: string }> = ({ user, 
             </div>
           </div>
           {weeklySummary.topProject && (weeklySummary.topProject.downloads > 0 || weeklySummary.topProject.followers > 0) && (
-            <div className="mt-3 bg-modrinth-bg/40 rounded-2xl p-3 flex items-center gap-3 relative">
+            <div className="app-panel-soft mt-3 p-3 flex items-center gap-3 relative">
               {weeklySummary.topProject.icon_url ? (
                 <img src={weeklySummary.topProject.icon_url} alt={weeklySummary.topProject.title} className="w-9 h-9 rounded-xl bg-modrinth-bg" />
               ) : (
@@ -3350,6 +1992,85 @@ const AnalyticsPage: React.FC<{ user: ModrinthUser; token: string }> = ({ user, 
         </div>
       </div>
 
+      <div className="mb-8 animate-fade-in-up" style={{ animationDelay: '0.14s' }}>
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <h3 className="text-sm font-bold text-modrinth-muted uppercase">{t('top_movers')}</h3>
+          <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-modrinth-muted">{analyticsRangeDays}d</span>
+        </div>
+        <div className="app-panel p-4">
+          {topMovers.length > 0 ? (
+            <div className="space-y-2">
+              {topMovers.map((project, index) => {
+                const score = Math.max(1, project.downloads + project.followers);
+                const maxScore = Math.max(1, topMovers[0].downloads + topMovers[0].followers);
+                return (
+                  <div key={project.id} className="app-panel-soft flex items-center gap-3 p-3">
+                    <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-modrinth-green/15 text-xs font-extrabold text-modrinth-green">
+                      {index + 1}
+                    </div>
+                    {project.icon_url ? (
+                      <img src={project.icon_url} alt={project.title} className="h-10 w-10 shrink-0 rounded-xl bg-modrinth-bg object-cover" />
+                    ) : (
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-modrinth-bg text-modrinth-muted">
+                        <Package size={18} />
+                      </div>
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <div className="mb-1 truncate text-sm font-extrabold text-modrinth-text">{project.title}</div>
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] font-bold text-modrinth-muted">
+                        <span className="text-modrinth-green">+{project.downloads.toLocaleString()} {t('downloads').toLowerCase()}</span>
+                        <span>+{project.followers.toLocaleString()} {t('likes').toLowerCase()}</span>
+                      </div>
+                      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-modrinth-bg/80">
+                        <div className="h-full rounded-full app-progress-fill transition-all duration-700" style={{ width: `${Math.max(8, (score / maxScore) * 100)}%` }} />
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="py-3 text-center text-sm text-modrinth-muted">{t('no_movers')}</p>
+          )}
+        </div>
+      </div>
+
+      <div className="mb-8 animate-fade-in-up" style={{ animationDelay: '0.16s' }}>
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <h3 className="text-sm font-bold text-modrinth-muted uppercase">{t('project_health')}</h3>
+          <div className="rounded-full bg-modrinth-green/10 px-3 py-1 text-xs font-extrabold text-modrinth-green">
+            {projectHealth.score}/100
+          </div>
+        </div>
+        <div className="app-panel p-4">
+          <div className="mb-4 flex items-center gap-3">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-modrinth-green/12 text-modrinth-green">
+              <ShieldCheck size={24} />
+            </div>
+            <div className="min-w-0">
+              <div className="text-base font-extrabold text-modrinth-text">{t('project_health')}</div>
+              <p className="text-xs leading-relaxed text-modrinth-muted">{t('project_health_desc')}</p>
+            </div>
+          </div>
+          <div className="space-y-2">
+            {projectHealth.issues.map((issue) => (
+              <div key={issue.key} className="app-panel-soft flex items-start gap-3 p-3">
+                <div className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl ${issue.value > 0 ? 'bg-yellow-500/12 text-yellow-400' : 'bg-modrinth-green/12 text-modrinth-green'}`}>
+                  {issue.icon}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="text-sm font-extrabold text-modrinth-text">{issue.label}</div>
+                    <div className={`text-sm font-mono font-extrabold ${issue.value > 0 ? 'text-yellow-400' : 'text-modrinth-green'}`}>{issue.value}</div>
+                  </div>
+                  <p className="mt-1 text-xs leading-relaxed text-modrinth-muted">{issue.detail}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
       {/* Improved Top Projects Chart */}
       <div className="flex items-center justify-between mb-4">
           <h3 className="text-sm font-bold text-modrinth-muted uppercase">{t('top_projects')}</h3>
@@ -3359,14 +2080,14 @@ const AnalyticsPage: React.FC<{ user: ModrinthUser; token: string }> = ({ user, 
           </div>
       </div>
       
-      <div className="bg-modrinth-card/75 backdrop-blur-xl p-5 rounded-3xl mb-8 animate-fade-in-up shadow-[0_10px_26px_rgba(0,0,0,0.22)] relative overflow-hidden" style={{ animationDelay: '0.15s' }}>
+      <div className="app-panel p-5 mb-8 animate-fade-in-up relative overflow-hidden" style={{ animationDelay: '0.15s' }}>
         {projects.length > 0 ? (
             <div className="space-y-2">
               {sortedProjects.map((p, idx) => {
                 const val = p[metric];
                 const percent = (val / maxVal) * 100;
                 return (
-                  <div key={p.id} className="bg-modrinth-bg/40 rounded-2xl p-3 flex items-center gap-3">
+                  <div key={p.id} className="app-panel-soft p-3 flex items-center gap-3">
                     <div className="w-7 h-7 rounded-lg bg-modrinth-green/15 flex items-center justify-center text-xs font-bold text-modrinth-green">{idx + 1}</div>
                     {p.icon_url ? (
                       <img src={p.icon_url} alt={p.title} className="w-10 h-10 rounded-xl bg-modrinth-bg" />
@@ -3381,7 +2102,7 @@ const AnalyticsPage: React.FC<{ user: ModrinthUser; token: string }> = ({ user, 
                         <div className="text-sm font-mono font-bold text-modrinth-green">{val.toLocaleString()}</div>
                       </div>
                       <div className="mt-2 h-1.5 w-full bg-modrinth-bg/80 rounded-full overflow-hidden">
-                        <div className="h-full bg-gradient-to-r from-modrinth-green to-modrinth-green/70 rounded-full transition-all duration-500" style={{ width: `${percent}%` }} />
+                        <div className="h-full app-progress-fill rounded-full transition-all duration-500" style={{ width: `${percent}%` }} />
                       </div>
                     </div>
                   </div>
@@ -3394,13 +2115,13 @@ const AnalyticsPage: React.FC<{ user: ModrinthUser; token: string }> = ({ user, 
       <h3 className="text-sm font-bold text-modrinth-muted uppercase mb-3">{t('categories_overview')}</h3>
       <div className="grid grid-cols-2 gap-3 animate-fade-in-up" style={{ animationDelay: '0.2s' }}>
         {stats.sortedCats.map(([cat, count]) => (
-          <div key={cat} className="bg-modrinth-card/75 backdrop-blur-xl p-3 rounded-2xl shadow-[0_10px_26px_rgba(0,0,0,0.2)] relative overflow-hidden">
+          <div key={cat} className="app-panel p-3 relative overflow-hidden">
             <div className="flex items-center justify-between gap-2 mb-2 relative">
               <div className="text-sm font-bold text-modrinth-text truncate capitalize">{cat}</div>
               <div className="text-xs font-mono font-bold text-modrinth-muted">{count}</div>
             </div>
             <div className="h-1.5 bg-modrinth-bg/80 rounded-full overflow-hidden">
-              <div className="h-full bg-gradient-to-r from-modrinth-green to-modrinth-green/70 rounded-full" style={{ width: `${projects.length ? (count / projects.length) * 100 : 0}%` }} />
+              <div className="h-full app-progress-fill rounded-full" style={{ width: `${projects.length ? (count / projects.length) * 100 : 0}%` }} />
             </div>
           </div>
         ))}
@@ -3413,49 +2134,563 @@ const AnalyticsPage: React.FC<{ user: ModrinthUser; token: string }> = ({ user, 
   );
 };
 
+const SettingsSection: React.FC<{ icon: React.ReactNode; title: string; subtitle?: string; children: React.ReactNode; className?: string }> = ({ icon, title, subtitle, children, className = '' }) => (
+  <section className={`app-panel app-reveal overflow-visible p-4 ${className}`}>
+    <div className="mb-4 flex items-start gap-3">
+      <div className="app-icon-tile flex h-9 w-9 shrink-0 items-center justify-center text-modrinth-green">
+        {icon}
+      </div>
+      <div className="min-w-0">
+        <h2 className="text-sm font-extrabold uppercase tracking-[0.08em] text-modrinth-text">{title}</h2>
+        {subtitle && <p className="mt-1 text-xs leading-relaxed text-modrinth-muted">{subtitle}</p>}
+      </div>
+    </div>
+    {children}
+  </section>
+);
+
+const SettingsActionButton: React.FC<{
+  icon: React.ReactNode;
+  title: string;
+  subtitle?: string;
+  onClick?: () => void;
+  href?: string;
+  danger?: boolean;
+}> = ({ icon, title, subtitle, onClick, href, danger = false }) => {
+  const content = (
+    <>
+      <span className={`app-icon-tile flex h-9 w-9 shrink-0 items-center justify-center ${danger ? 'text-red-400' : 'text-modrinth-green'}`}>
+        {icon}
+      </span>
+      <span className="min-w-0 flex-1 text-left">
+        <span className="block truncate text-sm font-extrabold text-modrinth-text">{title}</span>
+        {subtitle && <span className="mt-0.5 block text-xs leading-relaxed text-modrinth-muted">{subtitle}</span>}
+      </span>
+      {href && <ExternalLink size={14} className="shrink-0 text-modrinth-muted" />}
+    </>
+  );
+
+  const className = `flex w-full items-center gap-3 rounded-lg border border-modrinth-border bg-modrinth-bg px-3 py-3 ${
+    danger ? 'hover:border-red-500/40 hover:bg-red-500/10' : 'hover:border-modrinth-green/40 hover:bg-modrinth-cardHover'
+  }`;
+
+  if (href) {
+    return (
+      <a href={href} target="_blank" rel="noreferrer" className={className}>
+        {content}
+      </a>
+    );
+  }
+
+  return (
+    <button type="button" onClick={onClick} className={className}>
+      {content}
+    </button>
+  );
+};
+
+const ACCENT_PRESETS = [
+  '#38C172',
+  '#22C55E',
+  '#14B8A6',
+  '#0EA5E9',
+  '#6366F1',
+  '#A855F7',
+  '#EC4899',
+  '#F97316',
+  '#EAB308',
+  '#EF4444',
+] as const;
+
+type HsvColor = {
+  h: number;
+  s: number;
+  v: number;
+};
+
+const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
+
+const normalizeHexColor = (value: string) => {
+  const trimmed = value.trim();
+  if (/^#[0-9A-F]{6}$/i.test(trimmed)) return trimmed.toUpperCase();
+  return null;
+};
+
+const hexToRgb = (hex: string) => {
+  const valid = normalizeHexColor(hex);
+  if (!valid) return null;
+  const raw = valid.slice(1);
+  return {
+    r: parseInt(raw.slice(0, 2), 16),
+    g: parseInt(raw.slice(2, 4), 16),
+    b: parseInt(raw.slice(4, 6), 16),
+  };
+};
+
+const rgbToHex = (r: number, g: number, b: number) => `#${[r, g, b].map(channel => clamp(Math.round(channel), 0, 255).toString(16).padStart(2, '0')).join('').toUpperCase()}`;
+
+const hsvToHex = ({ h, s, v }: HsvColor) => {
+  const c = v * s;
+  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+  const m = v - c;
+  let r = 0;
+  let g = 0;
+  let b = 0;
+
+  if (h < 60) [r, g, b] = [c, x, 0];
+  else if (h < 120) [r, g, b] = [x, c, 0];
+  else if (h < 180) [r, g, b] = [0, c, x];
+  else if (h < 240) [r, g, b] = [0, x, c];
+  else if (h < 300) [r, g, b] = [x, 0, c];
+  else [r, g, b] = [c, 0, x];
+
+  return rgbToHex((r + m) * 255, (g + m) * 255, (b + m) * 255);
+};
+
+const hexToHsv = (hex: string): HsvColor => {
+  const rgb = hexToRgb(hex) || { r: 56, g: 193, b: 114 };
+  const r = rgb.r / 255;
+  const g = rgb.g / 255;
+  const b = rgb.b / 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const delta = max - min;
+  let h = 0;
+
+  if (delta !== 0) {
+    if (max === r) h = 60 * (((g - b) / delta) % 6);
+    else if (max === g) h = 60 * ((b - r) / delta + 2);
+    else h = 60 * ((r - g) / delta + 4);
+  }
+
+  return {
+    h: h < 0 ? h + 360 : h,
+    s: max === 0 ? 0 : delta / max,
+    v: max,
+  };
+};
+
+const AppColorPicker: React.FC<{
+  value: string;
+  inputValue: string;
+  onInputValueChange: (value: string) => void;
+  onPreview: (value: string) => void;
+  onCommit: (value: string) => void;
+  t: (key: string) => string;
+}> = ({ value, inputValue, onInputValueChange, onPreview, onCommit, t }) => {
+  const [hsv, setHsv] = useState<HsvColor>(() => hexToHsv(value));
+  const areaRef = useRef<HTMLDivElement | null>(null);
+  const hueRef = useRef<HTMLDivElement | null>(null);
+  const areaThumbRef = useRef<HTMLSpanElement | null>(null);
+  const hueThumbRef = useRef<HTMLSpanElement | null>(null);
+  const previewSwatchRef = useRef<HTMLDivElement | null>(null);
+  const hsvRef = useRef<HsvColor>(hexToHsv(value));
+  const pickingRef = useRef<'area' | 'hue' | null>(null);
+  const latestHexRef = useRef(normalizeHexColor(value) || '#38C172');
+  const activeHex = normalizeHexColor(inputValue) || value;
+  const hueColor = hsvToHex({ h: hsv.h, s: 1, v: 1 });
+
+  const paintPicker = useCallback((next: HsvColor, hex: string) => {
+    const hueHex = hsvToHex({ h: next.h, s: 1, v: 1 });
+    if (areaRef.current) areaRef.current.style.backgroundColor = hueHex;
+    if (areaThumbRef.current) {
+      areaThumbRef.current.style.left = `${next.s * 100}%`;
+      areaThumbRef.current.style.top = `${(1 - next.v) * 100}%`;
+      areaThumbRef.current.style.backgroundColor = hex;
+    }
+    if (hueThumbRef.current) {
+      hueThumbRef.current.style.left = `${(next.h / 359.999) * 100}%`;
+    }
+    if (previewSwatchRef.current) {
+      previewSwatchRef.current.style.backgroundColor = hex;
+    }
+  }, []);
+
+  useEffect(() => {
+    const valid = normalizeHexColor(value) || '#38C172';
+    const nextHsv = hexToHsv(valid);
+    latestHexRef.current = valid;
+    hsvRef.current = nextHsv;
+    setHsv(nextHsv);
+    paintPicker(nextHsv, valid);
+  }, [paintPicker, value]);
+
+  const preview = (next: HsvColor) => {
+    const clean = {
+      h: clamp(next.h, 0, 359.999),
+      s: clamp(next.s, 0, 1),
+      v: clamp(next.v, 0, 1),
+    };
+    const hex = hsvToHex(clean);
+    hsvRef.current = clean;
+    latestHexRef.current = hex;
+    paintPicker(clean, hex);
+    onPreview(hex);
+  };
+
+  const finishPicking = () => {
+    if (!pickingRef.current) return;
+    pickingRef.current = null;
+    setHsv(hsvRef.current);
+    onInputValueChange(latestHexRef.current);
+    onCommit(latestHexRef.current);
+  };
+
+  const pickFromArea = (event: React.PointerEvent<HTMLDivElement>) => {
+    const rect = areaRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const x = clamp(event.clientX - rect.left, 0, rect.width);
+    const y = clamp(event.clientY - rect.top, 0, rect.height);
+    preview({ ...hsvRef.current, s: rect.width === 0 ? 0 : x / rect.width, v: rect.height === 0 ? 0 : 1 - y / rect.height });
+  };
+
+  const pickHue = (event: React.PointerEvent<HTMLDivElement>) => {
+    const rect = hueRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const x = clamp(event.clientX - rect.left, 0, rect.width);
+    preview({ ...hsvRef.current, h: rect.width === 0 ? 0 : (x / rect.width) * 359.999 });
+  };
+
+  const beginAreaPick = (event: React.PointerEvent<HTMLDivElement>) => {
+    pickingRef.current = 'area';
+    event.currentTarget.setPointerCapture(event.pointerId);
+    pickFromArea(event);
+  };
+
+  const beginHuePick = (event: React.PointerEvent<HTMLDivElement>) => {
+    pickingRef.current = 'hue';
+    event.currentTarget.setPointerCapture(event.pointerId);
+    pickHue(event);
+  };
+
+  return (
+    <div className="rounded-lg border border-modrinth-border bg-modrinth-bg p-3">
+      <div className="mb-3 flex items-center gap-3">
+        <div ref={previewSwatchRef} className="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg border border-modrinth-border shadow-[0_12px_26px_rgba(0,0,0,0.22)]" style={{ backgroundColor: activeHex }}>
+          <Check size={18} className="text-black/70" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-extrabold text-modrinth-text">{t('accent_presets')}</p>
+          <p className="mt-1 text-xs leading-relaxed text-modrinth-muted">{t('accent_presets_desc')}</p>
+        </div>
+      </div>
+
+      <div
+        ref={areaRef}
+        role="slider"
+        aria-label={t('accent_editor')}
+        tabIndex={0}
+        className="relative mb-3 h-36 touch-none overflow-hidden rounded-lg border border-modrinth-border"
+        style={{
+          backgroundColor: hueColor,
+          backgroundImage: 'linear-gradient(90deg, #fff, rgba(255,255,255,0)), linear-gradient(0deg, #000, rgba(0,0,0,0))',
+        }}
+        onPointerDown={beginAreaPick}
+        onPointerMove={(event) => {
+          if (pickingRef.current === 'area') pickFromArea(event);
+        }}
+        onPointerUp={() => {
+          finishPicking();
+        }}
+        onPointerCancel={() => {
+          finishPicking();
+        }}
+      >
+        <span
+          ref={areaThumbRef}
+          className="absolute h-5 w-5 -translate-x-1/2 -translate-y-1/2 rounded-full border border-modrinth-border shadow-[0_2px_10px_rgba(0,0,0,0.55)]"
+          style={{ left: `${hsv.s * 100}%`, top: `${(1 - hsv.v) * 100}%`, backgroundColor: activeHex }}
+        />
+      </div>
+
+      <div
+        ref={hueRef}
+        role="slider"
+        aria-label={t('accent_hue')}
+        tabIndex={0}
+        className="relative mb-3 h-8 touch-none rounded-lg border border-modrinth-border"
+        style={{ background: 'linear-gradient(90deg, #EF4444, #EAB308, #22C55E, #14B8A6, #0EA5E9, #6366F1, #A855F7, #EC4899, #EF4444)' }}
+        onPointerDown={beginHuePick}
+        onPointerMove={(event) => {
+          if (pickingRef.current === 'hue') pickHue(event);
+        }}
+        onPointerUp={() => {
+          finishPicking();
+        }}
+        onPointerCancel={() => {
+          finishPicking();
+        }}
+      >
+        <span
+          ref={hueThumbRef}
+          className="absolute top-1/2 h-10 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border border-modrinth-border bg-modrinth-card shadow-[0_2px_10px_rgba(0,0,0,0.55)]"
+          style={{ left: `${(hsv.h / 359.999) * 100}%` }}
+        />
+      </div>
+
+      <div className="mb-3 grid grid-cols-5 gap-2">
+        {ACCENT_PRESETS.map((color) => {
+          const active = value.toLowerCase() === color.toLowerCase();
+          return (
+            <button
+              key={color}
+              type="button"
+              aria-label={color}
+              onClick={() => {
+                const nextHsv = hexToHsv(color);
+                latestHexRef.current = color;
+                hsvRef.current = nextHsv;
+                onInputValueChange(color);
+                onPreview(color);
+                onCommit(color);
+                setHsv(nextHsv);
+                paintPicker(nextHsv, color);
+              }}
+              className={`relative h-10 rounded-lg border bg-modrinth-card p-1 ${active ? 'border-modrinth-green' : 'border-modrinth-border hover:border-modrinth-muted'}`}
+            >
+              <span className="block h-full w-full rounded-md" style={{ backgroundColor: color }} />
+              {active && (
+                <span className="absolute inset-0 flex items-center justify-center">
+                  <Check size={15} className="rounded-full bg-black/45 p-0.5 text-white" />
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      <input
+        type="text"
+        value={inputValue}
+        onChange={(event) => {
+          const next = event.target.value.toUpperCase();
+          onInputValueChange(next);
+          const valid = normalizeHexColor(next);
+          if (valid) {
+            const nextHsv = hexToHsv(valid);
+            latestHexRef.current = valid;
+            hsvRef.current = nextHsv;
+            onPreview(valid);
+            onCommit(valid);
+            setHsv(nextHsv);
+            paintPicker(nextHsv, valid);
+          }
+        }}
+        placeholder="#38C172"
+        className="app-input font-mono uppercase"
+      />
+      <p className="mt-2 text-xs text-modrinth-muted">{t('hex_format_hint')}</p>
+    </div>
+  );
+};
+
 const SettingsPage: React.FC<{ user: ModrinthUser; onLogout: () => void; token: string; updateInfo?: GitHubRelease | null }> = ({ user, onLogout, token, updateInfo }) => {
   const { theme, setTheme, language, setLanguage, t, accentColor, setAccentColor, showFavoriteProjects, setShowFavoriteProjects } = useSettings();
   const [showProfileEdit, setShowProfileEdit] = useState(false);
   const [currUser, setCurrUser] = useState(user);
   const [colorInput, setColorInput] = useState(accentColor);
+  const [draftAccentColor, setDraftAccentColor] = useState(accentColor);
+  const [showAccentEditor, setShowAccentEditor] = useState(false);
   const [settingsRelease, setSettingsRelease] = useState<GitHubRelease | null>(updateInfo ?? null);
+  const [settingsNotice, setSettingsNotice] = useState('');
+  const importSettingsRef = useRef<HTMLInputElement | null>(null);
+  const accentPreviewFrame = useRef<number | null>(null);
+  const pendingAccentPreview = useRef(accentColor);
+  const settingsNoticeTimer = useRef<number | null>(null);
+  const settingsMountedRef = useRef(true);
   const latestVersion = settingsRelease?.tag_name.replace(/^v/, '') || null;
   const isOutdated = latestVersion ? compareVersions(latestVersion, APP_VERSION) > 0 : false;
 
   const reloadUser = () => {
-    fetchCurrentUser(token).then(setCurrUser).catch(console.error);
+    fetchCurrentUser(token)
+      .then((nextUser) => {
+        if (settingsMountedRef.current) setCurrUser(nextUser);
+      })
+      .catch(console.error);
+  };
+
+  const showSettingsNotice = (message: string) => {
+    if (settingsNoticeTimer.current !== null) window.clearTimeout(settingsNoticeTimer.current);
+    setSettingsNotice(message);
+    settingsNoticeTimer.current = window.setTimeout(() => {
+      settingsNoticeTimer.current = null;
+      setSettingsNotice('');
+    }, 2200);
+  };
+
+  const resetAppearance = () => {
+    setTheme('dark');
+    setLanguage(DEFAULT_LANGUAGE);
+    setAccentColor('#38C172');
+    setColorInput('#38C172');
+    setDraftAccentColor('#38C172');
+    setShowFavoriteProjects(true);
+    showSettingsNotice(t('appearance_reset_done'));
+  };
+
+  const previewAccentColor = useCallback((color: string) => {
+    const valid = normalizeHexColor(color);
+    if (!valid) return;
+    pendingAccentPreview.current = valid;
+
+    if (accentPreviewFrame.current !== null) return;
+    accentPreviewFrame.current = window.requestAnimationFrame(() => {
+      accentPreviewFrame.current = null;
+      document.documentElement.style.setProperty('--accent-color', pendingAccentPreview.current);
+      setDraftAccentColor(pendingAccentPreview.current);
+      setColorInput(pendingAccentPreview.current);
+    });
+  }, []);
+
+  const commitAccentColor = useCallback((color: string) => {
+    const valid = normalizeHexColor(color);
+    if (!valid) return;
+    if (accentPreviewFrame.current !== null) {
+      window.cancelAnimationFrame(accentPreviewFrame.current);
+      accentPreviewFrame.current = null;
+    }
+    pendingAccentPreview.current = valid;
+    document.documentElement.style.setProperty('--accent-color', valid);
+    setDraftAccentColor(valid);
+    setColorInput(valid);
+    setAccentColor(valid);
+  }, [setAccentColor]);
+
+  const exportSettings = () => {
+    const payload = {
+      app: 'Rinthy',
+      exportedAt: new Date().toISOString(),
+      appVersion: APP_VERSION,
+      settings: {
+        theme,
+        language,
+        accentColor,
+        showFavoriteProjects,
+        projectSortMode: localStorage.getItem('project_sort_mode') || 'popularity',
+        favoriteProjectIds: readFavoriteProjectIds(currUser.id),
+      },
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `rinthy-settings-${currUser.username}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+    showSettingsNotice(t('settings_exported'));
+  };
+
+  const importSettings = async (file?: File) => {
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+      const imported = parsed?.settings ?? parsed;
+
+      if (imported.theme === 'dark' || imported.theme === 'light') setTheme(imported.theme);
+      if (typeof imported.language === 'string' && isSupportedLanguage(imported.language)) setLanguage(imported.language);
+      if (typeof imported.accentColor === 'string' && /^#[0-9A-F]{6}$/i.test(imported.accentColor)) {
+        const importedAccent = imported.accentColor.toUpperCase();
+        setAccentColor(importedAccent);
+        setColorInput(importedAccent);
+        setDraftAccentColor(importedAccent);
+      }
+      if (typeof imported.showFavoriteProjects === 'boolean') setShowFavoriteProjects(imported.showFavoriteProjects);
+      if (typeof imported.projectSortMode === 'string') saveProjectSortMode(imported.projectSortMode as ProjectSortMode);
+      if (Array.isArray(imported.favoriteProjectIds)) {
+        saveFavoriteProjectIds(currUser.id, imported.favoriteProjectIds.filter((id: unknown): id is string => typeof id === 'string'));
+      }
+
+      showSettingsNotice(t('settings_imported'));
+    } catch {
+      alert(t('settings_import_failed'));
+    } finally {
+      if (importSettingsRef.current) importSettingsRef.current.value = '';
+    }
+  };
+
+  const clearAnalyticsData = () => {
+    if (!window.confirm(t('clear_analytics_confirm'))) return;
+    localStorage.removeItem(`rinthy_analytics_snapshots_${currUser.id}`);
+    localStorage.removeItem(`rinthy_analytics_snapshots_${currUser.id}_range_resets`);
+    showSettingsNotice(t('analytics_cleared'));
+  };
+
+  const clearUpdateCache = () => {
+    localStorage.removeItem('latest_release');
+    localStorage.removeItem('dismissed_version');
+    localStorage.removeItem('dismissed_at_launch');
+    localStorage.removeItem('last_update_check');
+    setSettingsRelease(null);
+    showSettingsNotice(t('update_cache_cleared'));
   };
 
   useEffect(() => {
     if (settingsRelease) return;
+    let cancelled = false;
     checkForUpdates().then(release => {
-      if (release) setSettingsRelease(release);
+      if (!cancelled && release) setSettingsRelease(release);
     });
+    return () => {
+      cancelled = true;
+    };
   }, [settingsRelease]);
 
+  useEffect(() => {
+    const valid = normalizeHexColor(accentColor) || '#38C172';
+    setDraftAccentColor(valid);
+    setColorInput(valid);
+    pendingAccentPreview.current = valid;
+  }, [accentColor]);
+
+  useEffect(() => {
+    settingsMountedRef.current = true;
+    return () => {
+      settingsMountedRef.current = false;
+      if (accentPreviewFrame.current !== null) {
+        window.cancelAnimationFrame(accentPreviewFrame.current);
+      }
+      if (settingsNoticeTimer.current !== null) {
+        window.clearTimeout(settingsNoticeTimer.current);
+      }
+    };
+  }, []);
+
   return (
-    <div className="px-4 pb-20 animate-fade-in">
-      <header className="flex items-center justify-between mb-6 sticky top-0 z-50 backdrop-blur-xl pt-[calc(env(safe-area-inset-top)+0.85rem)] pb-3 -mx-4 px-4 min-h-[84px] shadow-[0_8px_24px_rgba(0,0,0,0.35)] overflow-hidden relative transition-colors duration-300" style={{ backgroundColor: 'rgba(var(--card-rgb), 0.7)' }}>
+    <div className="px-4 pb-24 animate-fade-in">
+      <header className="app-topbar flex items-center justify-between mb-5 sticky top-0 z-50 pt-[calc(env(safe-area-inset-top)+0.85rem)] pb-3 -mx-4 px-4 min-h-[82px] overflow-hidden relative transition-colors duration-300">
         <div className="flex flex-col gap-1 relative">
           <h1 className="text-2xl font-bold text-modrinth-text leading-none">{t('settings')}</h1>
-          <p className="text-modrinth-muted text-xs font-medium">{t('dev_panel')}</p>
+          <p className="text-modrinth-muted text-xs font-medium">{t('settings_subtitle')}</p>
         </div>
       </header>
-      <div className="bg-modrinth-card/75 backdrop-blur-xl p-5 rounded-3xl flex items-center gap-4 mb-6 animate-fade-in-up relative shadow-[0_10px_26px_rgba(0,0,0,0.22)] overflow-hidden">
-        <img src={currUser.avatar_url} alt={currUser.username} className="w-16 h-16 rounded-full bg-modrinth-bg border-2 border-modrinth-border" />
-        <div>
-          <div className="relative">
-            <h2 className="text-xl font-bold text-modrinth-text">{currUser.username}</h2>
-            <p className="text-modrinth-green text-sm font-medium capitalize">{currUser.role}</p>
+
+      {settingsNotice && (
+        <div className="fixed left-1/2 top-[calc(env(safe-area-inset-top)+0.85rem)] z-[300] -translate-x-1/2 rounded-full border border-modrinth-border bg-modrinth-card px-4 py-2 text-xs font-extrabold text-modrinth-text shadow-[0_14px_34px_rgba(0,0,0,0.34)] app-floating-menu">
+          {settingsNotice}
+        </div>
+      )}
+
+      <div className="app-panel app-reveal mb-5 overflow-hidden p-5">
+        <div className="flex items-center gap-4">
+          <img src={currUser.avatar_url} alt={currUser.username} className="h-16 w-16 shrink-0 rounded-lg border border-modrinth-border bg-modrinth-bg object-cover" />
+          <div className="min-w-0 flex-1">
+            <h2 className="truncate text-xl font-extrabold text-modrinth-text">{currUser.username}</h2>
+            <div className="mt-1 flex flex-wrap items-center gap-2">
+              <span className="rounded-md border border-modrinth-border bg-modrinth-bg px-2 py-1 text-[10px] font-extrabold uppercase tracking-[0.08em] text-modrinth-muted">{currUser.role}</span>
+              <span className="truncate rounded-md border border-modrinth-border bg-modrinth-bg px-2 py-1 text-[10px] font-mono text-modrinth-muted">{currUser.id}</span>
+            </div>
           </div>
-          <button onClick={()=>setShowProfileEdit(true)} className="absolute right-4 top-4 p-2 text-modrinth-muted hover:text-modrinth-green"><Edit3 size={18}/></button>
+          <button onClick={()=>setShowProfileEdit(true)} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-modrinth-border bg-modrinth-bg text-modrinth-muted hover:border-modrinth-green/40 hover:text-modrinth-green">
+            <Edit3 size={18}/>
+          </button>
         </div>
       </div>
 
       {isOutdated && settingsRelease && (
-        <div className="bg-modrinth-card/75 backdrop-blur-xl p-4 rounded-3xl shadow-[0_10px_26px_rgba(0,0,0,0.22)] overflow-hidden mb-6">
+        <div className="app-panel app-reveal p-4 overflow-hidden mb-5">
           <div className="flex items-start gap-3">
-            <div className="p-2 rounded-full bg-modrinth-green/15 text-modrinth-green"><AlertTriangle size={18} /></div>
+            <div className="app-icon-tile flex h-9 w-9 shrink-0 items-center justify-center text-modrinth-green"><AlertTriangle size={18} /></div>
             <div className="flex-1">
               <div className="text-sm font-bold text-modrinth-text mb-1">{t('update_outdated')}</div>
               <div className="text-xs text-modrinth-muted mb-3">
@@ -3474,96 +2709,88 @@ const SettingsPage: React.FC<{ user: ModrinthUser; onLogout: () => void; token: 
         </div>
       )}
 
-      <div className="space-y-4 animate-fade-in-up" style={{ animationDelay: '0.1s' }}>
-         <div className="bg-modrinth-card/75 backdrop-blur-xl p-4 rounded-3xl shadow-[0_10px_26px_rgba(0,0,0,0.22)] overflow-visible relative z-20">
-           <div className="flex items-center gap-2 mb-3 text-modrinth-green font-bold text-sm uppercase"><Globe size={16} /> {t('language')}</div>
-           <LanguageSelect value={language} onChange={setLanguage} compact />
-         </div>
+      <div className="space-y-4">
+        <SettingsSection icon={<Smartphone size={17} />} title={t('appearance')} subtitle={t('appearance_desc')} className="relative z-20" >
+          <div className="space-y-4">
+            <div>
+              <div className="mb-2 flex items-center gap-2 text-xs font-extrabold uppercase tracking-[0.08em] text-modrinth-muted"><Globe size={14} /> {t('language')}</div>
+              <LanguageSelect value={language} onChange={setLanguage} compact />
+            </div>
 
-         <div className="bg-modrinth-card/75 backdrop-blur-xl p-4 rounded-3xl shadow-[0_10px_26px_rgba(0,0,0,0.22)] overflow-hidden relative z-0">
-           <div className="flex items-center gap-2 mb-3 text-modrinth-green font-bold text-sm uppercase"><Moon size={16} /> {t('theme')}</div>
-           <div className="flex bg-modrinth-bg rounded-xl p-1 border border-modrinth-border">
-            {(['dark', 'light'] as ThemeMode[]).map(m => (
-               <button key={m} onClick={() => setTheme(m)} className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${theme === m ? 'bg-modrinth-card text-modrinth-text shadow-sm' : 'text-modrinth-muted hover:text-modrinth-text'}`}>
-                 {t(m)}
-               </button>
-             ))}
-           </div>
-         </div>
+            <div>
+              <div className="mb-2 flex items-center gap-2 text-xs font-extrabold uppercase tracking-[0.08em] text-modrinth-muted"><Moon size={14} /> {t('theme')}</div>
+              <div className="flex rounded-lg border border-modrinth-border bg-modrinth-bg p-1">
+                {(['dark', 'light'] as ThemeMode[]).map(m => (
+                  <button key={m} onClick={() => setTheme(m)} className={`flex-1 rounded-md py-2 text-xs font-extrabold ${theme === m ? 'bg-modrinth-card text-modrinth-text shadow-sm' : 'text-modrinth-muted hover:text-modrinth-text'}`}>
+                    {t(m)}
+                  </button>
+                ))}
+              </div>
+            </div>
 
-         <div className="bg-modrinth-card/75 backdrop-blur-xl p-4 rounded-3xl shadow-[0_10px_26px_rgba(0,0,0,0.22)] overflow-hidden">
-           <div className="flex items-center justify-between mb-3">
-             <div className="flex items-center gap-2 text-modrinth-green font-bold text-sm uppercase"><Smartphone size={16} /> {t('accent_color')}</div>
-             <button 
-               onClick={() => {
-                 setColorInput('#30B27C');
-                 setAccentColor('#30B27C');
-               }}
-               className="text-xs text-modrinth-muted hover:text-modrinth-green font-medium px-3 py-1 rounded-lg bg-modrinth-bg border border-modrinth-border hover:border-modrinth-green transition-all"
-             >
-               {t('reset')}
-             </button>
-           </div>
-           <div className="flex items-center gap-3">
-             <div className="relative w-16 h-16">
-               <input 
-                 type="color" 
-                 value={colorInput} 
-                 onChange={(e) => {
-                   setColorInput(e.target.value);
-                   setAccentColor(e.target.value);
-                 }}
-                 className="absolute inset-0 w-full h-full rounded-full border-4 border-modrinth-border cursor-pointer overflow-hidden"
-                 style={{ 
-                   WebkitAppearance: 'none',
-                   MozAppearance: 'none',
-                   appearance: 'none',
-                   padding: 0,
-                   border: '4px solid var(--border)'
-                 }}
-               />
-             </div>
-             <div className="flex-1">
-               <input 
-                 type="text" 
-                 value={colorInput} 
-                 onChange={(e) => {
-                   setColorInput(e.target.value);
-                   if (/^#[0-9A-F]{6}$/i.test(e.target.value)) {
-                     setAccentColor(e.target.value);
-                   }
-                 }}
-                 placeholder="#30B27C"
-                 className="w-full bg-modrinth-bg border border-modrinth-border rounded-xl px-4 py-3 text-modrinth-text text-sm font-mono uppercase focus:border-modrinth-green outline-none"
-               />
-               <p className="text-xs text-modrinth-muted mt-2">{t('hex_format_hint')}</p>
-             </div>
-           </div>
-         </div>
+            <div>
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2 text-xs font-extrabold uppercase tracking-[0.08em] text-modrinth-muted"><Sun size={14} /> {t('accent_color')}</div>
+                <button onClick={resetAppearance} className="rounded-lg border border-modrinth-border bg-modrinth-bg px-3 py-1.5 text-xs font-bold text-modrinth-muted hover:border-modrinth-green/40 hover:text-modrinth-text">{t('reset_all')}</button>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAccentEditor((value) => !value)}
+                className="flex w-full items-center gap-3 rounded-lg border border-modrinth-border bg-modrinth-bg p-3 text-left hover:border-modrinth-green/40 hover:bg-modrinth-cardHover"
+              >
+                <span className="h-11 w-11 shrink-0 rounded-lg border border-modrinth-border shadow-[0_10px_22px_rgba(0,0,0,0.22)]" style={{ backgroundColor: draftAccentColor }} />
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-extrabold text-modrinth-text">{t('accent_presets')}</span>
+                  <span className="mt-0.5 block font-mono text-xs text-modrinth-muted">{draftAccentColor.toUpperCase()}</span>
+                </span>
+                <ChevronDown size={16} className={`shrink-0 text-modrinth-muted transition-transform ${showAccentEditor ? 'rotate-180' : ''}`} />
+              </button>
+              {showAccentEditor && (
+                <div className="mt-3 app-reveal">
+                  <AppColorPicker
+                    value={draftAccentColor}
+                    inputValue={colorInput}
+                    onInputValueChange={setColorInput}
+                    onPreview={previewAccentColor}
+                    onCommit={commitAccentColor}
+                    t={t}
+                  />
+                </div>
+              )}
+            </div>
 
-         <div className="bg-modrinth-card/75 backdrop-blur-xl p-4 rounded-3xl shadow-[0_10px_26px_rgba(0,0,0,0.22)] overflow-hidden">
-           <div className="flex items-center justify-between gap-4">
-             <div className="min-w-0">
-               <div className="flex items-center gap-2 text-modrinth-green font-bold text-sm uppercase"><Star size={16} /> {t('favorite_projects')}</div>
-               <p className="text-xs text-modrinth-muted mt-1 leading-relaxed">{t('favorite_projects_desc')}</p>
-             </div>
-             <button
-               type="button"
-               role="switch"
-               aria-checked={showFavoriteProjects}
-               data-state={showFavoriteProjects ? 'checked' : 'unchecked'}
-               onClick={() => setShowFavoriteProjects(!showFavoriteProjects)}
-               className="app-switch"
-             >
-               <span className="app-switch__thumb" />
-             </button>
-           </div>
-         </div>
+            <div className="flex items-center justify-between gap-4 rounded-lg border border-modrinth-border bg-modrinth-bg p-3">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 text-sm font-extrabold text-modrinth-text"><Star size={15} className="text-modrinth-green" /> {t('favorite_projects')}</div>
+                <p className="mt-1 text-xs leading-relaxed text-modrinth-muted">{t('favorite_projects_desc')}</p>
+              </div>
+              <button type="button" role="switch" aria-checked={showFavoriteProjects} data-state={showFavoriteProjects ? 'checked' : 'unchecked'} onClick={() => setShowFavoriteProjects(!showFavoriteProjects)} className="app-switch">
+                <span className="app-switch__thumb" />
+              </button>
+            </div>
+          </div>
+        </SettingsSection>
 
-         <button onClick={onLogout} className="w-full bg-modrinth-bg hover:bg-red-500/10 border border-modrinth-border hover:border-red-500/30 p-4 rounded-2xl flex items-center gap-3 text-modrinth-muted hover:text-red-400 transition-all group shadow-sm">
-            <div className="p-2 rounded-lg bg-modrinth-card group-hover:bg-red-500/20"><LogOut size={20} /></div>
-            <span className="font-medium">{t('logout')}</span>
-         </button>
+        <SettingsSection icon={<Archive size={17} />} title={t('local_data')} subtitle={t('local_data_desc')} className="relative z-10">
+          <input ref={importSettingsRef} type="file" accept="application/json" className="hidden" onChange={(event) => void importSettings(event.target.files?.[0])} />
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <SettingsActionButton icon={<Download size={16} />} title={t('export_settings')} subtitle={t('export_settings_desc')} onClick={exportSettings} />
+            <SettingsActionButton icon={<Upload size={16} />} title={t('import_settings')} subtitle={t('import_settings_desc')} onClick={() => importSettingsRef.current?.click()} />
+            <SettingsActionButton icon={<RefreshCw size={16} />} title={t('clear_update_cache')} subtitle={t('clear_update_cache_desc')} onClick={clearUpdateCache} />
+            <SettingsActionButton icon={<Trash2 size={16} />} title={t('clear_analytics_data')} subtitle={t('clear_analytics_desc')} onClick={clearAnalyticsData} danger />
+          </div>
+        </SettingsSection>
+
+        <SettingsSection icon={<Info size={17} />} title={t('about_app')} subtitle={`Rinthy v${APP_VERSION}`}>
+          <div className="grid gap-2">
+            <div className="flex items-center justify-between rounded-lg border border-modrinth-border bg-modrinth-bg px-3 py-3">
+              <span className="text-sm font-bold text-modrinth-text">{t('update_current')}</span>
+              <span className="font-mono text-sm text-modrinth-muted">{APP_VERSION}</span>
+            </div>
+            <SettingsActionButton icon={<ExternalLink size={16} />} title={t('update_view_release')} subtitle={latestVersion ? `${t('update_new_version')}: ${latestVersion}` : t('check_updates')} href={settingsRelease?.html_url || 'https://github.com/imsawiq/Rinthy/releases'} />
+            <SettingsActionButton icon={<LogOut size={16} />} title={t('logout')} subtitle={t('logout_desc')} onClick={onLogout} danger />
+          </div>
+        </SettingsSection>
       </div>
 
       <div className="mt-12 text-center animate-fade-in" style={{ animationDelay: '0.3s' }}>
@@ -3582,8 +2809,10 @@ const SettingsPage: React.FC<{ user: ModrinthUser; onLogout: () => void; token: 
 const MainLayout: React.FC<{ user: ModrinthUser; token: string; onLogout: () => void; updateInfo?: GitHubRelease | null }> = ({ user, token, onLogout, updateInfo }) => {
   const [activeTab, setActiveTab] = useState<NavTab>(NavTab.PROJECTS);
   const { t, theme } = useSettings();
+  const scrollResetTimer = useRef<number | null>(null);
 
   const handleTabChange = useCallback((nextTab: NavTab) => {
+    if (scrollResetTimer.current !== null) window.clearTimeout(scrollResetTimer.current);
     window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
     document.documentElement.scrollTop = 0;
     document.body.scrollTop = 0;
@@ -3592,17 +2821,23 @@ const MainLayout: React.FC<{ user: ModrinthUser; token: string; onLogout: () => 
       setActiveTab(nextTab);
     }
 
-    window.setTimeout(() => {
+    scrollResetTimer.current = window.setTimeout(() => {
+      scrollResetTimer.current = null;
       window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
       document.documentElement.scrollTop = 0;
       document.body.scrollTop = 0;
     }, 0);
   }, [activeTab]);
+
+  useEffect(() => () => {
+    if (scrollResetTimer.current !== null) window.clearTimeout(scrollResetTimer.current);
+  }, []);
   
   return (
     <>
       <div className="pb-20">
         {activeTab === NavTab.PROJECTS && <Dashboard user={user} token={token} />}
+        {activeTab === NavTab.TEAMS && <TeamsPage user={user} token={token} />}
         {activeTab === NavTab.ANALYTICS && <AnalyticsPage user={user} token={token} />}
         {activeTab === NavTab.SETTINGS && <SettingsPage user={user} onLogout={onLogout} token={token} updateInfo={updateInfo} />}
       </div>
@@ -3623,9 +2858,18 @@ const App: React.FC = () => {
   const [showHelp, setShowHelp] = useState(false);
   const [updateRelease, setUpdateRelease] = useState<GitHubRelease | null>(null);
   const [latestRelease, setLatestRelease] = useState<GitHubRelease | null>(null);
+  const appMountedRef = useRef(true);
+
+  useEffect(() => {
+    appMountedRef.current = true;
+    return () => {
+      appMountedRef.current = false;
+    };
+  }, []);
 
   // Check for updates on app start
   useEffect(() => {
+    let cancelled = false;
     const now = Date.now();
     const launchCount = parseInt(localStorage.getItem('launch_count') || '0', 10) + 1;
     localStorage.setItem('launch_count', launchCount.toString());
@@ -3640,6 +2884,7 @@ const App: React.FC = () => {
     }
 
     checkForUpdates().then(release => {
+      if (cancelled) return;
       if (release) {
         setLatestRelease(release);
         localStorage.setItem('latest_release', JSON.stringify(release));
@@ -3653,15 +2898,21 @@ const App: React.FC = () => {
       }
       localStorage.setItem('last_update_check', now.toString());
     });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
     const initAuth = async () => {
        if (authState.token && !authState.user) {
         try {
           const user = await fetchCurrentUser(authState.token);
+          if (cancelled) return;
           setAuthState(prev => ({ ...prev, user, isLoading: false, error: null }));
         } catch (err) {
+          if (cancelled) return;
           console.error(err);
           const status = (err as any)?.status;
           if (status === 401 || status === 403) {
@@ -3674,12 +2925,17 @@ const App: React.FC = () => {
        }
     };
     initAuth();
+    return () => {
+      cancelled = true;
+    };
   }, [authState.token]);
 
   useEffect(() => {
     if (!CapApp || typeof (CapApp as any).addListener !== 'function') return;
+    let cancelled = false;
 
     const processOAuthCallback = (url: string) => {
+      if (cancelled) return;
       const payload = readOAuthCallback(url);
       if (!payload) return;
 
@@ -3726,6 +2982,7 @@ const App: React.FC = () => {
     });
 
     return () => {
+      cancelled = true;
       handleAppUrlOpen.then(listener => listener.remove()).catch(() => {});
     };
   }, []);
@@ -3734,6 +2991,7 @@ const App: React.FC = () => {
     setAuthState(prev => ({ ...prev, isLoading: true, error: null }));
     try {
       const user = await fetchCurrentUser(token);
+      if (!appMountedRef.current) return;
       localStorage.setItem('modrinth_token', token);
       localStorage.setItem('has_seen_onboarding', 'true');
       localStorage.setItem('has_seen_welcome', 'true');
@@ -3747,6 +3005,7 @@ const App: React.FC = () => {
         hasSeenOnboarding: true
       }));
     } catch (err) {
+      if (!appMountedRef.current) return;
       const status = (err as any)?.status;
       if (status === 401 || status === 403) {
         setAuthState(prev => ({ ...prev, isLoading: false, error: 'Invalid Token' }));

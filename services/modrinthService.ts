@@ -1,4 +1,4 @@
-import { ModrinthProject, ModrinthUser, ModrinthPayoutHistory, ProjectMember, UserSearchResult, ModifyUserPayload, ModrinthNotification, ProjectDependency, ModrinthVersion, ModrinthOrganization } from '../types';
+import { ModrinthProject, ModrinthUser, ModrinthPayoutHistory, ProjectMember, UserSearchResult, ModifyUserPayload, ModrinthNotification, ProjectDependency, ModrinthVersion, ModrinthOrganization, CreateModrinthVersionPayload, ModrinthOrganizationPayload, CreateModrinthProjectPayload } from '../types';
 
 const BASE_URL = 'https://api.modrinth.com/v2';
 const BASE_URL_V3 = 'https://api.modrinth.com/v3';
@@ -49,6 +49,28 @@ const getHeaders = (token: string) => ({
   'Authorization': normalizeAuthorization(token),
   'User-Agent': USER_AGENT,
   'Content-Type': 'application/json',
+  'Cache-Control': 'no-cache',
+  'Pragma': 'no-cache'
+});
+
+const getBinaryHeaders = (token: string, contentType: string) => ({
+  'Authorization': normalizeAuthorization(token),
+  'User-Agent': USER_AGENT,
+  'Content-Type': contentType,
+  'Cache-Control': 'no-cache',
+  'Pragma': 'no-cache'
+});
+
+const getFormHeaders = (token: string) => ({
+  'Authorization': normalizeAuthorization(token),
+  'User-Agent': USER_AGENT,
+  'Cache-Control': 'no-cache',
+  'Pragma': 'no-cache'
+});
+
+const getMultipartHeaders = (token: string) => ({
+  'Authorization': normalizeAuthorization(token),
+  'User-Agent': USER_AGENT,
   'Cache-Control': 'no-cache',
   'Pragma': 'no-cache'
 });
@@ -436,6 +458,82 @@ export const fetchOrganization = async (organizationIdOrSlug: string, token: str
   return response.json();
 };
 
+export const fetchUserOrganizations = async (userId: string, token: string): Promise<ModrinthOrganization[]> => {
+  const endpoints = [
+    `${BASE_URL_V3}/user/${userId}/organizations`,
+    `${BASE_URL}/user/${userId}/organizations`,
+  ];
+
+  for (const endpoint of endpoints) {
+    try {
+      const response = await fetch(endpoint, { headers: getHeaders(token) });
+      if (response.ok) return response.json();
+    } catch {
+      // Try the next API version before giving up.
+    }
+  }
+
+  return [];
+};
+
+export const fetchOrganizationProjects = async (organizationIdOrSlug: string, token: string): Promise<ModrinthProject[]> => {
+  const endpoints = [
+    `${BASE_URL_V3}/organization/${organizationIdOrSlug}/projects`,
+    `${BASE_URL}/organization/${organizationIdOrSlug}/projects`,
+  ];
+
+  for (const endpoint of endpoints) {
+    try {
+      const response = await fetch(endpoint, { headers: getHeaders(token) });
+      if (response.ok) return response.json();
+    } catch {
+      // Try the next API version before giving up.
+    }
+  }
+
+  return [];
+};
+
+export const createOrganization = async (data: ModrinthOrganizationPayload, token: string): Promise<ModrinthOrganization> => {
+  const response = await fetch(`${BASE_URL_V3}/organization`, {
+    method: 'POST',
+    headers: getHeaders(token),
+    body: JSON.stringify(data)
+  });
+
+  if (!response.ok) {
+    const err = await response.text();
+    throw new Error(`Failed to create organization: ${err}`);
+  }
+
+  return response.json();
+};
+
+export const updateOrganization = async (organizationIdOrSlug: string, data: Partial<ModrinthOrganizationPayload>, token: string): Promise<void> => {
+  const response = await fetch(`${BASE_URL_V3}/organization/${organizationIdOrSlug}`, {
+    method: 'PATCH',
+    headers: getHeaders(token),
+    body: JSON.stringify(data)
+  });
+
+  if (!response.ok) {
+    const err = await response.text();
+    throw new Error(`Failed to update organization: ${err}`);
+  }
+};
+
+export const deleteOrganization = async (organizationIdOrSlug: string, token: string): Promise<void> => {
+  const response = await fetch(`${BASE_URL_V3}/organization/${organizationIdOrSlug}`, {
+    method: 'DELETE',
+    headers: getHeaders(token)
+  });
+
+  if (!response.ok) {
+    const err = await response.text();
+    throw new Error(`Failed to delete organization: ${err}`);
+  }
+};
+
 export const getProjects = async (ids: string[]): Promise<ModrinthProject[]> => {
   if (ids.length === 0) return [];
   // Modrinth allows fetching multiple projects via ?ids=["id1","id2"]
@@ -447,13 +545,14 @@ export const getProjects = async (ids: string[]): Promise<ModrinthProject[]> => 
 
 export const updateProject = async (projectId: string, data: Partial<ModrinthProject>, token: string): Promise<void> => {
   const payload: any = {};
+  const validSides = ['required', 'optional', 'unsupported'];
 
   // Whitelist basic fields
   if (data.title !== undefined) payload.title = data.title;
   if (data.description !== undefined) payload.description = data.description;
   if (data.body !== undefined) payload.body = data.body;
-  if (data.client_side !== undefined) payload.client_side = data.client_side;
-  if (data.server_side !== undefined) payload.server_side = data.server_side;
+  if (data.client_side !== undefined && validSides.includes(data.client_side)) payload.client_side = data.client_side;
+  if (data.server_side !== undefined && validSides.includes(data.server_side)) payload.server_side = data.server_side;
   
   // Handle license specifically
   if (data.license?.id) {
@@ -518,6 +617,17 @@ export const deleteProjectIcon = async (projectId: string, token: string) => {
         headers: getHeaders(token)
     });
     if (!response.ok) throw new Error('Failed to delete icon');
+};
+
+export const deleteProject = async (projectId: string, token: string) => {
+    const response = await fetch(`${BASE_URL}/project/${projectId}`, {
+        method: 'DELETE',
+        headers: getHeaders(token)
+    });
+    if (!response.ok) {
+        const err = await response.text();
+        throw new Error(`Failed to delete project: ${err}`);
+    }
 };
 
 export const addGalleryImage = async (projectId: string, file: File, featured: boolean, title: string, desc: string, token: string) => {
@@ -610,7 +720,84 @@ export const fetchLoaderTags = async (): Promise<string[]> => {
   return [];
 };
 
+export const createProject = async (data: CreateModrinthProjectPayload, token: string): Promise<ModrinthProject> => {
+  const payload: Record<string, any> = {
+    slug: data.slug,
+    title: data.title,
+    description: data.description,
+    body: data.body,
+    project_type: data.project_type,
+    categories: data.categories,
+    client_side: data.client_side,
+    server_side: data.server_side,
+    license_id: data.license_id,
+    initial_versions: [],
+    is_draft: true,
+  };
+
+  if (data.organization_id) payload.organization_id = data.organization_id;
+
+  const form = new FormData();
+  form.append('data', JSON.stringify(payload));
+  if (data.icon) form.append('icon', data.icon);
+
+  const response = await fetch(`${BASE_URL}/project`, {
+    method: 'POST',
+    headers: getFormHeaders(token),
+    body: form
+  });
+
+  if (!response.ok) {
+    const err = await response.text();
+    let message = err;
+    try {
+      const parsed = JSON.parse(err);
+      message = parsed.description || parsed.error || err;
+    } catch {
+      message = err;
+    }
+    throw new Error(`Failed to create project: ${message}`);
+  }
+
+  return response.json();
+};
+
 // --- Version Management ---
+
+export const createVersion = async (data: CreateModrinthVersionPayload, token: string): Promise<ModrinthVersion> => {
+  const formData = new FormData();
+  const payload = {
+    name: data.name,
+    version_number: data.version_number,
+    changelog: data.changelog || '',
+    dependencies: data.dependencies,
+    game_versions: data.game_versions,
+    version_type: data.version_type,
+    loaders: data.loaders,
+    featured: data.featured,
+    project_id: data.project_id,
+    file_parts: data.file_parts,
+    primary_file: data.primary_file
+  };
+
+  formData.append('data', JSON.stringify(payload));
+  data.files.forEach(({ part, file }) => {
+    formData.append(part, file, file.name);
+  });
+
+  const response = await fetch(`${BASE_URL}/version`, {
+    method: 'POST',
+    headers: getMultipartHeaders(token),
+    body: formData
+  });
+
+  if (!response.ok) {
+    const err = await response.text();
+    throw new Error(`Failed to create version: ${err}`);
+  }
+
+  return response.json();
+};
 
 export const modifyVersion = async (
   versionId: string,
@@ -658,12 +845,46 @@ export const modifyUser = async (userId: string, data: ModifyUserPayload, token:
     body: JSON.stringify(data)
   });
   if (!response.ok) throw new Error('Failed to update profile');
+  currentUserCache.clear();
+  userByIdCache.clear();
+};
+
+export const changeUserAvatar = async (userId: string, file: File, token: string) => {
+  const response = await fetch(`${BASE_URL}/user/${userId}/icon`, {
+    method: 'PATCH',
+    headers: getBinaryHeaders(token, file.type || 'application/octet-stream'),
+    body: file
+  });
+
+  if (!response.ok) {
+    const text = await response.text().catch(() => '');
+    throw new Error(text || 'Failed to update avatar');
+  }
+
+  currentUserCache.clear();
+  userByIdCache.clear();
+};
+
+export const deleteUserAvatar = async (userId: string, token: string) => {
+  const response = await fetch(`${BASE_URL}/user/${userId}/icon`, {
+    method: 'DELETE',
+    headers: getHeaders(token)
+  });
+
+  if (!response.ok) {
+    const text = await response.text().catch(() => '');
+    throw new Error(text || 'Failed to remove avatar');
+  }
+
+  currentUserCache.clear();
+  userByIdCache.clear();
 };
 
 export const searchUser = async (username: string): Promise<UserSearchResult[]> => {
-  if (!username) return [];
+  const query = username.trim();
+  if (!query || query.length > 39 || /\s/.test(query)) return [];
   try {
-    const response = await fetch(`${BASE_URL}/user/${username}`);
+    const response = await fetch(`${BASE_URL}/user/${encodeURIComponent(query)}`);
     if (response.status === 404) return [];
     if (!response.ok) return [];
     
@@ -683,7 +904,16 @@ export const searchUser = async (username: string): Promise<UserSearchResult[]> 
 // --- Team Members API ---
 
 export const fetchProjectMembers = async (slug: string, token: string): Promise<ProjectMember[]> => {
-  // Using project slug for GET usually works to get members
+  try {
+    const project = await fetchProject(slug, token);
+    if (project.team) {
+      const members = await fetchTeamMembers(project.team, token);
+      if (members.length > 0) return members;
+    }
+  } catch {
+    // Fall back to the legacy project members endpoint below.
+  }
+
   const response = await fetch(`${BASE_URL}/project/${slug}/members`, {
     headers: getHeaders(token)
   });
@@ -706,7 +936,7 @@ export const addTeamMember = async (teamId: string, userId: string, token: strin
 export const updateTeamMember = async (
   teamId: string,
   userId: string,
-  data: { role?: string; permissions?: number; payouts_split?: number; ordering?: number },
+  data: { role?: string; permissions?: number; organization_permissions?: number; payouts_split?: number; ordering?: number },
   token: string
 ) => {
   const response = await fetch(`${BASE_URL}/team/${teamId}/members/${userId}`, {
@@ -715,6 +945,44 @@ export const updateTeamMember = async (
     body: JSON.stringify(data)
   });
   if (!response.ok) throw new Error('Failed to update member');
+};
+
+export const transferProjectToOrganization = async (projectId: string, organizationId: string | null, token: string): Promise<void> => {
+  if (!organizationId) {
+    throw new Error('Select an organization to transfer this project.');
+  }
+
+  const response = await fetch(`${BASE_URL_V3}/organization/${organizationId}/projects`, {
+    method: 'POST',
+    headers: getHeaders(token),
+    body: JSON.stringify({ project_id: projectId })
+  });
+
+  if (!response.ok) {
+    const err = await response.text();
+    throw new Error(`Failed to transfer project: ${err}`);
+  }
+
+  const project = await fetchProject(projectId, token);
+  const nextOrganization = project.organization_id || project.organization || null;
+  if (nextOrganization !== organizationId) {
+    const nextOrganizationProject = await fetchOrganizationProjects(organizationId, token);
+    if (nextOrganizationProject.some((item) => item.id === projectId)) return;
+    throw new Error('Project transfer endpoint accepted the request, but the project organization did not change.');
+  }
+};
+
+export const removeProjectFromOrganization = async (organizationId: string, projectId: string, newOwnerId: string, token: string): Promise<void> => {
+  const response = await fetch(`${BASE_URL_V3}/organization/${organizationId}/projects/${projectId}`, {
+    method: 'DELETE',
+    headers: getHeaders(token),
+    body: JSON.stringify({ new_owner: newOwnerId })
+  });
+
+  if (!response.ok) {
+    const err = await response.text();
+    throw new Error(`Failed to remove project from organization: ${err}`);
+  }
 };
 
 export const deleteTeamMember = async (teamId: string, userId: string, token: string) => {
@@ -743,6 +1011,18 @@ export const transferTeamOwnership = async (teamId: string, userId: string, toke
 };
 
 export const fetchTeamMembers = async (teamId: string, token: string): Promise<ProjectMember[]> => {
+  try {
+    const response = await fetch(`${BASE_URL_V3}/teams?ids=${encodeURIComponent(JSON.stringify([teamId]))}`, {
+      headers: getHeaders(token)
+    });
+    if (response.ok) {
+      const teams = await response.json();
+      if (Array.isArray(teams?.[0])) return teams[0];
+    }
+  } catch {
+    // Fall back to v2 below.
+  }
+
   const response = await fetch(`${BASE_URL}/team/${teamId}/members`, {
     headers: getHeaders(token)
   });
@@ -783,6 +1063,23 @@ export const markMultipleNotificationsRead = async (notifIds: string[], token: s
   if (notifIds.length === 0) return;
   // Fallback to parallel single requests since the bulk endpoint is flaky or non-standard
   await Promise.all(notifIds.map(id => markNotificationRead(id, token)));
+};
+
+export const runNotificationAction = async (actionRoute: [string, string] | string[], token: string) => {
+  const [methodRaw, routeRaw] = actionRoute;
+  const method = String(methodRaw || 'POST').toUpperCase();
+  const route = String(routeRaw || '').replace(/^\/+/, '');
+  if (!route) throw new Error('Invalid notification action');
+
+  const response = await fetch(`${BASE_URL}/${route}`, {
+    method,
+    headers: getHeaders(token)
+  });
+
+  if (!response.ok) {
+    const text = await response.text().catch(() => '');
+    throw new Error(text || 'Failed to run notification action');
+  }
 };
 
 export const deleteNotification = async (notifId: string, token: string) => {

@@ -1,6 +1,6 @@
 /** @type {import('tailwindcss').Config} */
 module.exports = {
-  content: ['./index.html', './index.tsx', './App.tsx', './components/**/*.{ts,tsx}', './services/**/*.{ts,tsx}'],
+  content: ['./index.html', './index.tsx', './App.tsx', './components/**/*.{ts,tsx}', './pages/**/*.{ts,tsx}', './services/**/*.{ts,tsx}'],
   theme: {
     extend: {
       fontFamily: {
@@ -24,12 +24,12 @@ module.exports = {
         }
       },
       animation: {
-        'fade-in': 'fadeIn 0.22s ease-out',
-        'fade-in-up': 'fadeInUp 0.3s ease-out',
-        'slide-in-right': 'slideInRight 0.26s ease-out',
-        'slide-in-left': 'slideInLeft 0.26s ease-out',
-        'slide-up': 'slideUp 0.26s ease-out',
-        'scale-in': 'scaleIn 0.18s ease-out',
+        'fade-in': 'fadeIn 0.22s cubic-bezier(0.2, 0, 0, 1)',
+        'fade-in-up': 'fadeInUp 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
+        'slide-in-right': 'slideInRight 0.26s cubic-bezier(0.16, 1, 0.3, 1)',
+        'slide-in-left': 'slideInLeft 0.26s cubic-bezier(0.16, 1, 0.3, 1)',
+        'slide-up': 'slideUp 0.26s cubic-bezier(0.16, 1, 0.3, 1)',
+        'scale-in': 'scaleIn 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
         'pulse-slow': 'pulse 3s infinite'
       },
       keyframes: {

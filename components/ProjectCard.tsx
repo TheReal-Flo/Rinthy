@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ModrinthProject } from '../types';
-import { Download, ChevronRight, Globe, Lock, Archive, Clock, Heart, MoreVertical, ExternalLink, Copy, Star } from 'lucide-react';
+import { Download, ChevronRight, Globe, Lock, Archive, Clock, Heart, MoreVertical, ExternalLink, Copy, Star, Box, Building2, Trash2 } from 'lucide-react';
 
 interface ProjectCardProps {
   project: ModrinthProject;
@@ -8,9 +8,13 @@ interface ProjectCardProps {
   isFavorite?: boolean;
   onToggleFavorite?: (id: string) => void;
   showFavoriteAction?: boolean;
+  organizationName?: string | null;
+  onDeleteProject?: (project: ModrinthProject) => void;
+  deleteProjectLabel?: string;
 }
 
-const ProjectCard: React.FC<ProjectCardProps> = ({ project, onClick, isFavorite = false, onToggleFavorite, showFavoriteAction = true }) => {
+const ProjectCard: React.FC<ProjectCardProps> = ({ project, onClick, isFavorite = false, onToggleFavorite, showFavoriteAction = true, organizationName = null, onDeleteProject, deleteProjectLabel = 'Delete project' }) => {
+  const title = project.title || project.name || project.slug || project.id;
   const summary = (project.description || '').trim() || 'No summary available';
 
   const getStatusInfo = (status: string) => {
@@ -30,7 +34,7 @@ const ProjectCard: React.FC<ProjectCardProps> = ({ project, onClick, isFavorite 
   const [showMenu, setShowMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
 
-  const projectUrl = `https://modrinth.com/project/${project.slug}`;
+  const projectUrl = `https://modrinth.com/project/${project.slug || project.id}`;
 
   const handleOpenOnWeb = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -63,6 +67,12 @@ const ProjectCard: React.FC<ProjectCardProps> = ({ project, onClick, isFavorite 
     onToggleFavorite?.(project.id);
   };
 
+  const handleDeleteProject = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setShowMenu(false);
+    onDeleteProject?.(project);
+  };
+
   useEffect(() => {
     if (!showMenu) return;
 
@@ -77,29 +87,38 @@ const ProjectCard: React.FC<ProjectCardProps> = ({ project, onClick, isFavorite 
   }, [showMenu]);
 
   return (
-    <div
+    <article
       ref={menuRef}
       onClick={() => onClick(project.id)}
-      className="bg-modrinth-card/75 backdrop-blur-xl rounded-3xl p-4 mb-4 active:scale-[0.985] transition-all duration-300 cursor-pointer shadow-[0_10px_28px_rgba(0,0,0,0.28)] hover:shadow-[0_14px_36px_rgba(0,0,0,0.34)] group relative overflow-hidden"
+      className="app-panel mb-3 cursor-pointer group relative overflow-hidden transition-all duration-300 active:scale-[0.992] hover:border-modrinth-green/35"
     >
-      <div className="flex items-start justify-between mb-3 relative z-10">
-        <div className="flex items-center gap-3 overflow-hidden flex-1">
-          <div className="w-14 h-14 rounded-2xl bg-modrinth-bg overflow-hidden flex-shrink-0">
+      <div className="p-4">
+      <div className="flex items-start justify-between gap-2 mb-3 relative z-10">
+        <div className="flex items-center gap-3 overflow-hidden flex-1 min-w-0">
+          <div className="w-14 h-14 rounded-lg app-icon-tile overflow-hidden flex-shrink-0">
           {project.icon_url ? (
-            <img src={project.icon_url} alt={project.title} className="w-full h-full object-cover object-center scale-[1.02]" loading="lazy" decoding="async" />
+            <img src={project.icon_url} alt={title} className="w-full h-full object-cover object-center scale-[1.02]" loading="lazy" decoding="async" />
           ) : (
-            <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-modrinth-card to-modrinth-bg text-modrinth-muted font-bold text-xl">
-              {project.title.charAt(0).toUpperCase()}
+            <div className="w-full h-full flex items-center justify-center bg-modrinth-bg text-modrinth-muted">
+              <Box size={24} />
             </div>
           )}
           </div>
-          <div className="min-w-0 flex-1 pr-2">
-            <h3 className="font-bold text-modrinth-text text-lg leading-tight truncate group-hover:text-modrinth-green transition-colors">
-              {project.title}
+          <div className="min-w-0 flex-1">
+            <h3 className="font-extrabold text-modrinth-text text-[17px] leading-tight truncate group-hover:text-modrinth-green transition-colors">
+              {title}
             </h3>
-            <p className="text-xs text-modrinth-muted truncate mt-0.5 font-mono opacity-70">
-              {project.slug}
-            </p>
+            <div className="mt-1 flex min-w-0 items-center gap-2">
+              <p className="min-w-0 truncate font-mono text-[11px] text-modrinth-muted opacity-80">
+                {project.slug || project.id}
+              </p>
+              {organizationName && (
+                <span className="inline-flex min-w-0 shrink items-center gap-1 rounded-md bg-modrinth-green/10 px-1.5 py-0.5 text-[10px] font-black text-modrinth-green">
+                  <Building2 size={10} className="shrink-0" />
+                  <span className="min-w-0 truncate">{organizationName}</span>
+                </span>
+              )}
+            </div>
           </div>
         </div>
 
@@ -107,7 +126,7 @@ const ProjectCard: React.FC<ProjectCardProps> = ({ project, onClick, isFavorite 
           <button
             type="button"
             onClick={handleToggleFavorite}
-            className={`mr-2 p-2.5 rounded-full transition-all active:scale-95 ${
+            className={`p-2.5 rounded-lg transition-all active:scale-95 ${
               isFavorite
                 ? 'text-orange-400'
                 : 'text-zinc-400 hover:text-yellow-400 hover:bg-yellow-400/10'
@@ -117,32 +136,28 @@ const ProjectCard: React.FC<ProjectCardProps> = ({ project, onClick, isFavorite 
             <Star size={18} strokeWidth={2.6} className={isFavorite ? 'fill-current' : ''} />
           </button>
         )}
-        <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[10px] font-bold uppercase tracking-wider backdrop-blur-sm ${status.color}`}>
-          <StatusIcon size={10} />
-          {status.label}
-        </div>
         <button
           type="button"
           onClick={(e) => { e.stopPropagation(); setShowMenu(v => !v); }}
-          className="ml-2 p-2.5 rounded-full text-zinc-300 hover:text-modrinth-green hover:bg-modrinth-bg/60 transition-colors"
+          className="p-2.5 rounded-lg text-zinc-300 hover:text-modrinth-green hover:bg-modrinth-bg/60 transition-colors"
         >
           <MoreVertical size={20} strokeWidth={2.75} />
         </button>
       </div>
 
-      <p className="text-sm text-modrinth-text/80 line-clamp-2 mb-4 leading-relaxed min-h-[2.5em] relative z-10">
+      <p className="text-sm text-modrinth-muted line-clamp-2 mb-4 leading-relaxed min-h-[2.5em] relative z-10">
         {summary}
       </p>
 
       {showMenu && (
         <div
-          className="absolute top-10 right-4 z-30 rounded-2xl text-xs overflow-hidden animate-fade-in-up min-w-[180px] bg-modrinth-card shadow-[0_12px_30px_rgba(0,0,0,0.6)]"
+          className="app-floating-menu absolute top-14 right-4 z-50 rounded-lg text-xs overflow-hidden min-w-[188px] bg-modrinth-card border border-modrinth-border shadow-[0_18px_42px_rgba(0,0,0,0.48)]"
           onClick={(e) => e.stopPropagation()}
         >
           <button
             type="button"
             onClick={handleOpenOnWeb}
-            className="relative w-full px-3 py-2 flex items-center gap-2 text-modrinth-text hover:bg-modrinth-bg text-left"
+            className="relative w-full px-3 py-2.5 flex items-center gap-2 text-modrinth-text hover:bg-modrinth-bg text-left font-semibold"
           >
             <ExternalLink size={14} className="text-modrinth-green" />
             <span>Open on Modrinth</span>
@@ -150,28 +165,43 @@ const ProjectCard: React.FC<ProjectCardProps> = ({ project, onClick, isFavorite 
           <button
             type="button"
             onClick={handleCopyLink}
-            className="relative w-full px-3 py-2 flex items-center gap-2 text-modrinth-text hover:bg-modrinth-bg text-left border-t border-modrinth-border/20"
+            className="relative w-full px-3 py-2.5 flex items-center gap-2 text-modrinth-text hover:bg-modrinth-bg text-left font-semibold"
           >
             <Copy size={14} className="text-modrinth-green" />
             <span>Copy link</span>
           </button>
+          {onDeleteProject && (
+            <button
+              type="button"
+              onClick={handleDeleteProject}
+              className="relative w-full px-3 py-2.5 flex items-center gap-2 text-red-400 hover:bg-red-500/10 text-left font-semibold"
+            >
+              <Trash2 size={14} />
+              <span>{deleteProjectLabel}</span>
+            </button>
+          )}
         </div>
       )}
 
-      <div className="flex items-center justify-between text-xs text-modrinth-muted border-t border-zinc-700/60 pt-3 relative z-10">
-        <div className="flex gap-5">
-          <div className="flex items-center gap-1.5 group/stat">
-            <Download size={14} className="text-zinc-500 group-hover/stat:text-modrinth-green transition-colors" />
-            <span className="font-medium group-hover/stat:text-modrinth-text transition-colors">{project.downloads.toLocaleString()}</span>
+      <div className="flex items-center justify-between gap-2 text-xs text-modrinth-muted border-t app-divider pt-3 relative z-10">
+        <div className="flex flex-wrap gap-2 min-w-0">
+          <div className="app-panel-soft flex items-center gap-1.5 px-2.5 py-1.5">
+            <Download size={14} className="text-modrinth-green" />
+            <span className="font-semibold text-modrinth-text">{project.downloads.toLocaleString()}</span>
           </div>
-          <div className="flex items-center gap-1.5 group/stat">
-            <Heart size={14} className="text-zinc-500 group-hover/stat:text-modrinth-green transition-colors" />
-            <span className="font-medium group-hover/stat:text-modrinth-text transition-colors">{project.followers.toLocaleString()}</span>
+          <div className="app-panel-soft flex items-center gap-1.5 px-2.5 py-1.5">
+            <Heart size={14} className="text-red-400" />
+            <span className="font-semibold text-modrinth-text">{project.followers.toLocaleString()}</span>
+          </div>
+          <div className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-[10px] font-bold uppercase tracking-wider ${status.color}`}>
+            <StatusIcon size={10} />
+            {status.label}
           </div>
         </div>
-        <ChevronRight size={16} className="text-zinc-600 group-hover:text-modrinth-green transition-all transform group-hover:translate-x-1" />
+        <ChevronRight size={17} className="shrink-0 text-modrinth-muted group-hover:text-modrinth-green transition-all transform group-hover:translate-x-1" />
       </div>
-    </div>
+      </div>
+    </article>
   );
 };
 
