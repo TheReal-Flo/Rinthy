@@ -1467,39 +1467,91 @@ const formatAnalyticsDate = (value: string, language: Language) => {
   return date.toLocaleDateString(APP_DATE_LOCALES[language] || APP_DATE_LOCALES.en, { month: 'short', day: 'numeric', year: 'numeric' });
 };
 
-const AnalyticsSparkline: React.FC<{ points: ModrinthAnalyticsPoint[]; metric: AnalyticsSeriesMetric; height?: number }> = ({ points, metric, height = 92 }) => {
+const AnalyticsSparkline: React.FC<{ points: ModrinthAnalyticsPoint[]; metric: AnalyticsSeriesMetric; language: Language; height?: number }> = ({ points, metric, language, height = 132 }) => {
   const values = points.map((point) => getAnalyticsMetricValue(point, metric));
   const max = Math.max(...values, 1);
+  const min = Math.min(...values, 0);
+  const range = Math.max(max - min, 1);
   const width = 320;
-  const padding = 10;
-  const plotWidth = width - padding * 2;
-  const plotHeight = height - padding * 2;
+  const paddingLeft = 34;
+  const paddingRight = 12;
+  const paddingTop = 20;
+  const paddingBottom = 26;
+  const plotWidth = width - paddingLeft - paddingRight;
+  const plotHeight = height - paddingTop - paddingBottom;
+  const getX = (index: number) => paddingLeft + (values.length === 1 ? plotWidth : (index / Math.max(1, values.length - 1)) * plotWidth);
+  const getY = (value: number) => paddingTop + plotHeight - ((value - min) / range) * plotHeight;
   const linePoints = values.length > 0
     ? values.map((value, index) => {
-        const x = padding + (values.length === 1 ? plotWidth : (index / (values.length - 1)) * plotWidth);
-        const y = padding + plotHeight - (value / max) * plotHeight;
+        const x = getX(index);
+        const y = getY(value);
         return `${x.toFixed(2)},${y.toFixed(2)}`;
       }).join(' ')
-    : `${padding},${height - padding} ${width - padding},${height - padding}`;
+    : `${paddingLeft},${height - paddingBottom} ${width - paddingRight},${height - paddingBottom}`;
+  const areaPoints = `${paddingLeft},${height - paddingBottom} ${linePoints} ${width - paddingRight},${height - paddingBottom}`;
+  const maxIndex = values.indexOf(max);
+  const minIndex = values.indexOf(min);
+  const markerEvery = values.length <= 8 ? 1 : Math.ceil(values.length / 6);
+  const markerIndexes = new Set<number>();
+  values.forEach((_, index) => {
+    if (index === 0 || index === values.length - 1 || index === maxIndex || index === minIndex || index % markerEvery === 0) markerIndexes.add(index);
+  });
+  const labeledIndexes = new Set([maxIndex, minIndex, Math.max(0, values.length - 1)].filter((index) => index >= 0));
+  if (values.length <= 8) values.forEach((_, index) => labeledIndexes.add(index));
+  const axisValues = [max, min + range / 2, min];
 
   return (
-    <svg viewBox={`0 0 ${width} ${height}`} className="h-24 w-full overflow-visible" role="img" aria-label={`${metric} trend`}>
+    <svg viewBox={`0 0 ${width} ${height}`} className="h-32 w-full overflow-visible" role="img" aria-label={`${metric} trend`}>
       <defs>
         <linearGradient id={`analytics-gradient-${metric}`} x1="0" x2="1" y1="0" y2="0">
           <stop offset="0%" stopColor="var(--accent-color, #38C172)" stopOpacity="0.35" />
           <stop offset="100%" stopColor="var(--accent-color, #38C172)" stopOpacity="1" />
         </linearGradient>
+        <linearGradient id={`analytics-area-${metric}`} x1="0" x2="0" y1="0" y2="1">
+          <stop offset="0%" stopColor="var(--accent-color, #38C172)" stopOpacity="0.16" />
+          <stop offset="100%" stopColor="var(--accent-color, #38C172)" stopOpacity="0.01" />
+        </linearGradient>
       </defs>
-      {[0.25, 0.5, 0.75].map((ratio) => (
-        <line key={ratio} x1={padding} x2={width - padding} y1={padding + plotHeight * ratio} y2={padding + plotHeight * ratio} className="stroke-modrinth-border/70" strokeWidth="1" strokeDasharray="4 8" />
-      ))}
-      <polyline points={linePoints} fill="none" stroke={`url(#analytics-gradient-${metric})`} strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
-      {values.map((value, index) => {
-        if (values.length > 18 && index % Math.ceil(values.length / 9) !== 0 && index !== values.length - 1) return null;
-        const x = padding + (values.length === 1 ? plotWidth : (index / Math.max(1, values.length - 1)) * plotWidth);
-        const y = padding + plotHeight - (value / max) * plotHeight;
-        return <circle key={index} cx={x} cy={y} r="3" className="fill-modrinth-green stroke-modrinth-card" strokeWidth="2" />;
+      {axisValues.map((value, index) => {
+        const y = getY(value);
+        return (
+          <React.Fragment key={`${value}-${index}`}>
+            <line x1={paddingLeft} x2={width - paddingRight} y1={y} y2={y} className="stroke-modrinth-border/70" strokeWidth="1" strokeDasharray={index === 2 ? '0' : '4 8'} />
+            <text x={paddingLeft - 7} y={y + 3} textAnchor="end" className="fill-modrinth-muted" fontSize="8" fontWeight="700">
+              {formatAnalyticsMetricValue(metric, value)}
+            </text>
+          </React.Fragment>
+        );
       })}
+      <polygon points={areaPoints} fill={`url(#analytics-area-${metric})`} />
+      <polyline points={linePoints} fill="none" stroke={`url(#analytics-gradient-${metric})`} strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" />
+      {values.map((value, index) => {
+        if (!markerIndexes.has(index)) return null;
+        const x = getX(index);
+        const y = getY(value);
+        const labelY = Math.max(10, y - 8);
+        const pointTime = getAnalyticsPointTime(points[index]);
+        const title = `${formatAnalyticsDate(pointTime, language)}: ${formatAnalyticsMetricValue(metric, value)}`;
+        return (
+          <g key={index}>
+            <title>{title}</title>
+            <line x1={x} x2={x} y1={y + 6} y2={height - paddingBottom} className="stroke-modrinth-border/45" strokeWidth="1" strokeDasharray="3 7" />
+            <circle cx={x} cy={y} r={labeledIndexes.has(index) ? 4 : 3} className="fill-modrinth-green stroke-modrinth-card" strokeWidth="2" />
+            {labeledIndexes.has(index) && (
+              <text x={x} y={labelY} textAnchor={index === 0 ? 'start' : index === values.length - 1 ? 'end' : 'middle'} className="fill-modrinth-text" fontSize="9" fontWeight="800">
+                {formatAnalyticsMetricValue(metric, value)}
+              </text>
+            )}
+          </g>
+        );
+      })}
+      {[0, values.length - 1].map((index) => (
+        values[index] !== undefined && (
+          <text key={index} x={getX(index)} y={height - 7} textAnchor={index === 0 ? 'start' : 'end'} className="fill-modrinth-muted" fontSize="8" fontWeight="700">
+            {formatAnalyticsDate(getAnalyticsPointTime(points[index]), language)}
+          </text>
+        )
+      ))}
     </svg>
   );
 };
@@ -2327,13 +2379,7 @@ const AnalyticsPage: React.FC<{ user: ModrinthUser; token: string }> = ({ user, 
             </div>
           </div>
           {trendPoints.length > 0 && (seriesMetric !== 'revenue' || analyticsV3RevenueAvailable) && hasAnalyticsMetric(trendPoints, seriesMetric) ? (
-            <>
-              <AnalyticsSparkline points={trendPoints} metric={seriesMetric} />
-              <div className="mt-2 flex items-center justify-between gap-3 text-[10px] font-bold text-modrinth-muted">
-                <span>{getAnalyticsPointTime(trendPoints[0]).slice(0, 10)}</span>
-                <span>{getAnalyticsPointTime(trendPoints[trendPoints.length - 1]).slice(0, 10)}</span>
-              </div>
-            </>
+            <AnalyticsSparkline points={trendPoints} metric={seriesMetric} language={language} />
           ) : (
             <div className="flex min-h-24 items-center justify-center rounded-lg border border-dashed border-modrinth-border bg-modrinth-bg/40 px-4 text-center text-sm font-semibold text-modrinth-muted">
               {seriesMetric === 'revenue' && !analyticsV3RevenueAvailable ? t('analytics_revenue_scope_needed') : t('analytics_no_series')}
@@ -3133,11 +3179,11 @@ const SettingsPage: React.FC<{ user: ModrinthUser; onLogout: () => void; token: 
 
             <div>
               <div className="mb-2 flex items-center gap-2 text-xs font-extrabold uppercase tracking-[0.08em] text-modrinth-muted"><Moon size={14} /> {t('theme')}</div>
-              <div className="app-segmented-tabs grid grid-cols-3 gap-1 rounded-lg border border-modrinth-border bg-modrinth-bg p-1">
+              <div className="app-segmented-tabs app-theme-tabs grid grid-cols-3 gap-1 rounded-lg border border-modrinth-border bg-modrinth-bg p-1">
                 {(['dark', 'light', 'glass'] as ThemeMode[]).map(m => {
                   const Icon = m === 'light' ? Sun : m === 'glass' ? Sparkles : Moon;
                   return (
-                    <button key={m} type="button" onClick={() => setTheme(m)} data-active={theme === m ? 'true' : undefined} className={`app-segmented-tab flex min-h-10 items-center justify-center gap-1.5 rounded-md px-2 py-2 text-xs font-extrabold ${theme === m ? 'bg-modrinth-card text-modrinth-text shadow-sm' : 'text-modrinth-muted hover:text-modrinth-text'}`}>
+                    <button key={m} type="button" onClick={() => setTheme(m)} data-active={theme === m ? 'true' : undefined} className={`app-segmented-tab app-theme-tab flex min-h-10 items-center justify-center gap-1.5 rounded-md px-2 py-2 text-xs font-extrabold ${theme === m ? 'text-modrinth-text' : 'text-modrinth-muted hover:text-modrinth-text'}`}>
                       <Icon size={13} />
                       <span className="truncate">{t(m)}</span>
                     </button>

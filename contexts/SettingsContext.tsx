@@ -5,7 +5,13 @@ import type { Language, SettingsContextType, ThemeMode } from '../types';
 import { DEFAULT_LANGUAGE, isSupportedLanguage, LANGUAGE_OPTIONS, TRANSLATIONS } from '../locales';
 
 const SHOW_FAVORITE_PROJECTS_KEY = 'show_favorite_projects';
+const THEME_CLASSES = ['theme-dark', 'theme-light', 'theme-glass'] as const;
 const SettingsContext = createContext<SettingsContextType | undefined>(undefined);
+
+const applyThemeClass = (theme: ThemeMode) => {
+  document.documentElement.classList.remove(...THEME_CLASSES);
+  document.documentElement.classList.add(`theme-${theme}`);
+};
 
 export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [theme, setThemeState] = useState<ThemeMode>(() => {
@@ -22,7 +28,7 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const setTheme = (newTheme: ThemeMode) => {
     setThemeState(newTheme);
     localStorage.setItem('theme', newTheme);
-    document.documentElement.className = `theme-${newTheme}`;
+    applyThemeClass(newTheme);
   };
 
   const setLanguage = (newLang: Language) => {
@@ -42,9 +48,9 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   };
 
   useEffect(() => {
-    document.documentElement.className = `theme-${theme}`;
+    applyThemeClass(theme);
     document.documentElement.style.setProperty('--accent-color', accentColor);
-  }, []);
+  }, [theme, accentColor]);
 
   const t = (key: string) => {
     const current = TRANSLATIONS[language] as Record<string, string>;

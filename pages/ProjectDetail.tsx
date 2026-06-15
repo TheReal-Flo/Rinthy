@@ -1081,7 +1081,7 @@ const ProjectDetail: React.FC<{ token: string; currentUserId?: string | null }> 
                   <button
                     type="button"
                     onClick={() => createVersionFileInputRef.current?.click()}
-                    className="rounded-lg bg-modrinth-green px-3 py-2 text-xs font-extrabold text-white active:scale-95"
+                    className="app-command app-glass-button rounded-lg px-3 py-2 text-xs font-extrabold text-modrinth-text"
                   >
                     {t('add_files')}
                   </button>
@@ -1115,7 +1115,8 @@ const ProjectDetail: React.FC<{ token: string; currentUserId?: string | null }> 
                       setDraggingVersionFiles(false);
                       applyCreateVersionFiles(Array.from(event.dataTransfer.files || []));
                     }}
-                    className={`w-full rounded-lg border border-dashed bg-modrinth-bg px-4 py-6 text-center text-sm font-bold transition-colors ${draggingVersionFiles ? 'border-modrinth-green text-modrinth-green' : 'border-modrinth-border text-modrinth-muted hover:border-modrinth-green hover:text-modrinth-green'}`}
+                    data-active={draggingVersionFiles ? 'true' : undefined}
+                    className="app-dropzone w-full px-4 py-6 text-center text-sm font-bold"
                   >
                     {draggingVersionFiles ? t('drop_version_files') : t('choose_version_files')}
                   </button>
@@ -1138,7 +1139,8 @@ const ProjectDetail: React.FC<{ token: string; currentUserId?: string | null }> 
                         applyCreateVersionFiles(Array.from(event.dataTransfer.files || []));
                       }}
                       onClick={() => createVersionFileInputRef.current?.click()}
-                      className={`w-full rounded-lg border border-dashed px-3 py-2 text-xs font-bold transition-colors ${draggingVersionFiles ? 'border-modrinth-green bg-modrinth-green/10 text-modrinth-green' : 'border-modrinth-border bg-modrinth-bg text-modrinth-muted hover:text-modrinth-text'}`}
+                      data-active={draggingVersionFiles ? 'true' : undefined}
+                      className="app-dropzone w-full px-3 py-2 text-xs font-bold"
                     >
                       {t('replace_version_files')}
                     </button>
@@ -1147,7 +1149,8 @@ const ProjectDetail: React.FC<{ token: string; currentUserId?: string | null }> 
                         <button
                           type="button"
                           onClick={() => setCreatingVersionPrimaryIndex(index)}
-                          className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-xs font-extrabold ${creatingVersionPrimaryIndex === index ? 'bg-modrinth-green text-white' : 'bg-modrinth-card text-modrinth-muted'}`}
+                          data-active={creatingVersionPrimaryIndex === index ? 'true' : undefined}
+                          className="app-choice-chip flex h-8 w-8 shrink-0 items-center justify-center text-xs font-extrabold"
                           aria-label={t('primary_file')}
                         >
                           {creatingVersionPrimaryIndex === index ? <Check size={14} /> : index + 1}
@@ -1188,8 +1191,8 @@ const ProjectDetail: React.FC<{ token: string; currentUserId?: string | null }> 
                         key={gv}
                         type="button"
                         onClick={() => setCreatingVersionGameVersions(prev => prev.includes(gv) ? prev.filter(x => x !== gv) : [...prev, gv])}
-                        style={active ? { borderColor: 'var(--accent-color)', backgroundColor: 'color-mix(in srgb, var(--accent-color) 16%, transparent)' } : undefined}
-                        className={`rounded-lg border px-2 py-1 text-[10px] font-bold ${active ? 'text-modrinth-text' : 'border-modrinth-border bg-modrinth-bg text-modrinth-muted'}`}
+                        data-active={active ? 'true' : undefined}
+                        className="app-choice-chip px-2 py-1 text-[10px] font-bold"
                       >
                         {gv}
                       </button>
@@ -1213,7 +1216,7 @@ const ProjectDetail: React.FC<{ token: string; currentUserId?: string | null }> 
                   />
                   <button
                     type="button"
-                    className="rounded-lg border border-modrinth-border bg-modrinth-bg px-3 text-xs font-bold text-modrinth-muted hover:text-modrinth-text"
+                    className="app-command px-3 text-xs font-bold"
                     onClick={() => {
                       const value = creatingVersionGameVersionInput.trim();
                       if (!value) return;
@@ -1231,7 +1234,8 @@ const ProjectDetail: React.FC<{ token: string; currentUserId?: string | null }> 
                         key={`selected-game-${value}`}
                         type="button"
                         onClick={() => setCreatingVersionGameVersions(prev => prev.filter(item => item !== value))}
-                        className="rounded-lg bg-modrinth-green/12 px-2 py-1 text-[10px] font-bold text-modrinth-green"
+                        data-active="true"
+                        className="app-choice-chip px-2 py-1 text-[10px] font-bold"
                       >
                         {value} ×
                       </button>
@@ -1251,8 +1255,8 @@ const ProjectDetail: React.FC<{ token: string; currentUserId?: string | null }> 
                         key={ld}
                         type="button"
                         onClick={() => setCreatingVersionLoaders(prev => prev.includes(ld) ? prev.filter(x => x !== ld) : [...prev, ld])}
-                        style={active ? { borderColor: 'var(--accent-color)', backgroundColor: 'color-mix(in srgb, var(--accent-color) 16%, transparent)' } : undefined}
-                        className={`rounded-lg border px-2 py-1 text-[10px] font-bold uppercase ${active ? 'text-modrinth-text' : 'border-modrinth-border bg-modrinth-bg text-modrinth-muted'}`}
+                        data-active={active ? 'true' : undefined}
+                        className="app-choice-chip px-2 py-1 text-[10px] font-bold uppercase"
                       >
                         {ld}
                       </button>
@@ -1276,7 +1280,7 @@ const ProjectDetail: React.FC<{ token: string; currentUserId?: string | null }> 
                   />
                   <button
                     type="button"
-                    className="rounded-lg border border-modrinth-border bg-modrinth-bg px-3 text-xs font-bold text-modrinth-muted hover:text-modrinth-text"
+                    className="app-command px-3 text-xs font-bold"
                     onClick={() => {
                       const value = creatingVersionLoaderInput.trim().toLowerCase();
                       if (!value) return;
@@ -1294,7 +1298,8 @@ const ProjectDetail: React.FC<{ token: string; currentUserId?: string | null }> 
                         key={`selected-loader-${value}`}
                         type="button"
                         onClick={() => setCreatingVersionLoaders(prev => prev.filter(item => item !== value))}
-                        className="rounded-lg bg-modrinth-green/12 px-2 py-1 text-[10px] font-bold uppercase text-modrinth-green"
+                        data-active="true"
+                        className="app-choice-chip px-2 py-1 text-[10px] font-bold uppercase"
                       >
                         {value} ×
                       </button>
@@ -1323,7 +1328,7 @@ const ProjectDetail: React.FC<{ token: string; currentUserId?: string | null }> 
                   <input
                     type="text"
                     placeholder="project id or slug"
-                    className="min-w-[9rem] flex-1 rounded-lg border border-modrinth-border bg-modrinth-bg px-3 py-2 text-[11px] text-modrinth-text outline-none focus:border-modrinth-green"
+                    className="app-input min-w-[9rem] flex-1 px-3 py-2 text-[11px]"
                     ref={createDepInputRef}
                     onKeyDown={e => {
                       if (e.key === 'Enter') {
@@ -1348,7 +1353,7 @@ const ProjectDetail: React.FC<{ token: string; currentUserId?: string | null }> 
                   />
                   <button
                     type="button"
-                    className="shrink-0 rounded-lg border border-modrinth-border bg-modrinth-bg px-3 py-2 text-[11px] text-modrinth-muted hover:text-modrinth-text"
+                    className="app-command shrink-0 px-3 py-2 text-[11px]"
                     onClick={() => {
                       const input = createDepInputRef.current;
                       if (!input || !input.value) return;
@@ -1366,8 +1371,8 @@ const ProjectDetail: React.FC<{ token: string; currentUserId?: string | null }> 
               <button
                 type="button"
                 onClick={() => setCreatingVersionFeatured(prev => !prev)}
-                style={creatingVersionFeatured ? { borderColor: 'var(--accent-color)', backgroundColor: 'color-mix(in srgb, var(--accent-color) 14%, transparent)' } : undefined}
-                className={`flex w-full items-center justify-between rounded-lg border p-4 text-left ${creatingVersionFeatured ? 'text-modrinth-text' : 'border-modrinth-border bg-modrinth-card text-modrinth-muted'}`}
+                data-active={creatingVersionFeatured ? 'true' : undefined}
+                className="app-choice-card flex w-full items-center justify-between p-4 text-left"
               >
                 <span>
                   <span className="block text-sm font-extrabold">{t('featured_version')}</span>
@@ -1376,7 +1381,7 @@ const ProjectDetail: React.FC<{ token: string; currentUserId?: string | null }> 
                 {creatingVersionFeatured && <Check size={18} className="shrink-0 text-modrinth-green" />}
               </button>
 
-              <div className="rounded-lg bg-modrinth-card p-4">
+              <div className="app-panel-soft p-4">
                 <div className="mb-2 text-sm font-extrabold text-modrinth-text">{t('release_checklist')}</div>
                 {createVersionWarnings.length === 0 ? (
                   <p className="text-xs font-bold text-modrinth-green">{t('release_checklist_ready')}</p>
@@ -1391,10 +1396,10 @@ const ProjectDetail: React.FC<{ token: string; currentUserId?: string | null }> 
             </div>
 
             <div className="app-topbar fixed bottom-0 left-0 right-0 z-[270] flex gap-3 px-4 py-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)]">
-              <button onClick={() => setCreatingVersion(false)} className="flex-1 rounded-lg bg-modrinth-card py-3 text-sm font-bold text-modrinth-muted hover:text-modrinth-text">
+              <button onClick={() => setCreatingVersion(false)} className="app-command flex-1 py-3 text-sm font-bold">
                 {t('cancel')}
               </button>
-              <button onClick={handleCreateVersion} disabled={creatingVersionSaving} className="flex-1 rounded-lg bg-modrinth-green py-3 text-sm font-bold text-white flex items-center justify-center active:scale-95 disabled:opacity-70">
+              <button onClick={handleCreateVersion} disabled={creatingVersionSaving} className="app-primary flex flex-1 items-center justify-center py-3 text-sm disabled:opacity-70">
                 {creatingVersionSaving ? <Loader2 size={16} className="animate-spin" /> : t('create_version')}
               </button>
             </div>
@@ -1464,8 +1469,8 @@ const ProjectDetail: React.FC<{ token: string; currentUserId?: string | null }> 
                         key={gv}
                         type="button"
                         onClick={() => setEditingVersionGameVersions(prev => prev.includes(gv) ? prev.filter(x => x !== gv) : [...prev, gv])}
-                        style={active ? { borderColor: 'var(--accent-color)', backgroundColor: 'color-mix(in srgb, var(--accent-color) 16%, transparent)' } : undefined}
-                        className={`rounded-lg border px-2 py-1 text-[10px] font-bold ${active ? 'text-modrinth-text' : 'border-modrinth-border bg-modrinth-bg text-modrinth-muted'}`}
+                        data-active={active ? 'true' : undefined}
+                        className="app-choice-chip px-2 py-1 text-[10px] font-bold"
                       >
                         {gv}
                       </button>
@@ -1527,7 +1532,7 @@ const ProjectDetail: React.FC<{ token: string; currentUserId?: string | null }> 
                   <input
                     type="text"
                     placeholder="project id or slug"
-                    className="min-w-[9rem] flex-1 rounded-lg border border-modrinth-border bg-modrinth-bg px-3 py-2 text-[11px] text-modrinth-text outline-none focus:border-modrinth-green"
+                    className="app-input min-w-[9rem] flex-1 px-3 py-2 text-[11px]"
                     ref={depInputRef}
                     onKeyDown={e => {
                       if (e.key === 'Enter') {
@@ -1552,7 +1557,7 @@ const ProjectDetail: React.FC<{ token: string; currentUserId?: string | null }> 
                   />
                   <button
                     type="button"
-                    className="px-3 py-2 rounded-lg border border-modrinth-border bg-modrinth-bg text-[11px] text-modrinth-muted hover:text-modrinth-text shrink-0"
+                    className="app-command shrink-0 px-3 py-2 text-[11px]"
                     onClick={() => {
                       const input = depInputRef.current;
                       if (!input || !input.value) return;
@@ -1577,8 +1582,8 @@ const ProjectDetail: React.FC<{ token: string; currentUserId?: string | null }> 
                         key={ld}
                         type="button"
                         onClick={() => setEditingVersionLoaders(prev => prev.includes(ld) ? prev.filter(x => x !== ld) : [...prev, ld])}
-                        style={active ? { borderColor: 'var(--accent-color)', backgroundColor: 'color-mix(in srgb, var(--accent-color) 16%, transparent)' } : undefined}
-                        className={`rounded-lg border px-2 py-1 text-[10px] uppercase ${active ? 'text-modrinth-text' : 'border-modrinth-border bg-modrinth-bg text-modrinth-muted'}`}
+                        data-active={active ? 'true' : undefined}
+                        className="app-choice-chip px-2 py-1 text-[10px] uppercase"
                       >
                         {ld}
                       </button>
@@ -1587,7 +1592,7 @@ const ProjectDetail: React.FC<{ token: string; currentUserId?: string | null }> 
                 </div>
               </div>
 
-              <div className="rounded-lg bg-modrinth-card p-4">
+              <div className="app-panel-soft p-4">
                 <div className="mb-2 text-sm font-extrabold text-modrinth-text">{t('release_checklist')}</div>
                 {editVersionWarnings.length === 0 ? (
                   <p className="text-xs font-bold text-modrinth-green">{t('release_checklist_ready')}</p>
@@ -1604,14 +1609,14 @@ const ProjectDetail: React.FC<{ token: string; currentUserId?: string | null }> 
             <div className="app-topbar fixed bottom-0 left-0 right-0 z-[270] flex gap-3 px-4 py-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)]">
               <button
                 onClick={() => setEditingVersion(null)}
-                className="flex-1 py-3 rounded-lg text-sm font-bold bg-modrinth-card text-modrinth-muted hover:text-modrinth-text hover:bg-modrinth-cardHover"
+                className="app-command flex-1 py-3 text-sm font-bold"
               >
                 {t('cancel')}
               </button>
               <button
                 onClick={handleSaveVersion}
                 disabled={savingVersion}
-                className="flex-1 py-3 rounded-lg text-sm font-bold bg-modrinth-green text-white flex items-center justify-center active:scale-95"
+                className="app-primary flex flex-1 items-center justify-center py-3 text-sm disabled:opacity-70"
               >
                 {savingVersion ? <Loader2 size={16} className="animate-spin" /> : t('save')}
               </button>

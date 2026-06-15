@@ -211,7 +211,7 @@ export const VersionsTab: React.FC<{
     <button
       type="button"
       onClick={openCreateVersion}
-      className="flex w-full items-center justify-center gap-2 rounded-lg bg-modrinth-green px-4 py-3 text-sm font-extrabold text-white shadow-[0_12px_28px_color-mix(in_srgb,var(--accent-color)_22%,transparent)] transition-transform active:scale-[0.98]"
+      className="app-primary flex w-full items-center justify-center gap-2 px-4 py-3 text-sm"
     >
       <Plus size={17} />
       {t('create_version')}
