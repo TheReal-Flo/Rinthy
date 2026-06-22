@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, Check, Loader2, Package, Save, Search, X } from 'lucide-react';
-import { addGalleryImage, addTeamMember, changeProjectIcon, createVersion, deleteGalleryImage, deleteProjectIcon, deleteTeamMember, deleteVersionById, fetchGameVersionTags, fetchLoaderTags, fetchProject, fetchProjectDependencies, fetchProjectMembers, fetchProjectVersions, fetchUserProjects, joinTeam, modifyVersion, searchUser, transferTeamOwnership, updateProject, updateTeamMember } from '../services/modrinthService';
+import { addGalleryImage, addTeamMember, changeProjectIcon, createVersion, deleteGalleryImage, deleteProjectIcon, deleteTeamMember, deleteVersionById, fetchGameVersionTags, fetchLoaderTags, fetchOrganizationProjects, fetchProject, fetchProjectDependencies, fetchProjectMembers, fetchProjectVersions, fetchUserOrganizations, fetchUserProjects, joinTeam, modifyVersion, searchUser, transferTeamOwnership, updateProject, updateTeamMember } from '../services/modrinthService';
 import type { ModrinthProject, ModrinthVersion, ProjectDependency, ProjectMember, UserSearchResult } from '../types';
 import { useSettings } from '../contexts/SettingsContext';
 import { EditTab, MembersTab, OverviewTab, VersionsTab, projectTabs } from './project-detail/ProjectDetailTabs';
@@ -348,18 +348,43 @@ const ProjectDetail: React.FC<{ token: string; currentUserId?: string | null }> 
     try {
       setLoading(true);
       const pData = await fetchProject(id, token);
-      const [mData, dData, vData, gvTags, ldTags, accessibleProjects] = await Promise.all([
+      const accessibleProjectsPromise = (async () => {
+        if (!currentUserId) return { projects: [] as ModrinthProject[], organizationKeys: [] as string[] };
+
+        const userProjects = await fetchUserProjects(currentUserId, token).catch(() => [] as ModrinthProject[]);
+        const userOrganizations = await fetchUserOrganizations(currentUserId, token).catch(() => []);
+        const organizationKeys = Array.from(new Set([
+          ...userOrganizations.map((organization) => organization.id),
+          ...userOrganizations.map((organization) => organization.slug),
+          ...userProjects.map((project) => project.organization_id || project.organization).filter(Boolean),
+        ])) as string[];
+        const organizationProjectGroups = await Promise.all(
+          organizationKeys.map((organizationKey) =>
+            fetchOrganizationProjects(organizationKey, token).catch(() => [] as ModrinthProject[])
+          )
+        );
+
+        return {
+          projects: [...userProjects, ...organizationProjectGroups.flat()],
+          organizationKeys,
+        };
+      })();
+
+      const [mData, dData, vData, gvTags, ldTags, accessible] = await Promise.all([
         fetchProjectMembers(id, token).catch(() => [] as ProjectMember[]),
         fetchProjectDependencies(id, token).catch(() => [] as ProjectDependency[]),
         fetchProjectVersions(id, token).catch(() => [] as ModrinthVersion[]),
         fetchGameVersionTags().catch(() => [] as string[]),
         fetchLoaderTags().catch(() => [] as string[]),
-        currentUserId ? fetchUserProjects(currentUserId, token).catch(() => [] as ModrinthProject[]) : Promise.resolve([] as ModrinthProject[])
+        accessibleProjectsPromise
       ]);
       if (requestId !== loadRequestIdRef.current) return;
       setProject(pData);
       setMembers(mData);
-      setHasListedProjectAccess(accessibleProjects.some((item) => item.id === pData.id || item.slug === pData.slug));
+      setHasListedProjectAccess(
+        accessible.projects.some((item) => item.id === pData.id || item.slug === pData.slug) ||
+        (!!(pData.organization_id || pData.organization) && accessible.organizationKeys.includes((pData.organization_id || pData.organization)!))
+      );
       setDeps(dData);
       setVersions(vData);
       setGameVersionTags(gvTags);
