@@ -2386,7 +2386,7 @@ const AnalyticsPage: React.FC<{ user: ModrinthUser; token: string }> = ({ user, 
       <div className="mb-8 animate-fade-in-up" style={{ animationDelay: '0.13s' }}>
         <div className="mb-3 flex items-center justify-between gap-3">
           <h3 className="text-sm font-bold text-modrinth-muted uppercase">{t('analytics_trend')}</h3>
-          <div className="app-segmented-tabs grid grid-cols-4 rounded-xl border border-modrinth-border bg-modrinth-bg p-1">
+          <div className="app-range-tabs app-analytics-icon-tabs grid grid-cols-4">
             {ANALYTICS_SERIES_METRICS.map((item) => {
               const label = item === 'downloads' ? t('downloads') : t(`${item}_label` as any);
               const Icon = item === 'downloads' ? Download : item === 'views' ? Eye : item === 'playtime' ? Timer : DollarSign;
@@ -2395,11 +2395,7 @@ const AnalyticsPage: React.FC<{ user: ModrinthUser; token: string }> = ({ user, 
                   key={item}
                   onClick={() => setSeriesMetric(item)}
                   data-active={seriesMetric === item ? 'true' : undefined}
-                  className={`app-segmented-tab flex h-7 w-7 items-center justify-center rounded-lg transition-all duration-200 active:scale-95 ${
-                    seriesMetric === item
-                      ? 'bg-modrinth-green/18 text-modrinth-green shadow-[0_0_0_1px_color-mix(in_srgb,var(--accent-color)_22%,transparent)]'
-                      : 'text-modrinth-muted hover:text-modrinth-text'
-                  }`}
+                  className="app-range-tab app-analytics-icon-tab"
                   aria-label={label}
                   title={label}
                 >
@@ -2444,7 +2440,7 @@ const AnalyticsPage: React.FC<{ user: ModrinthUser; token: string }> = ({ user, 
             <h3 className="text-sm font-bold text-modrinth-muted uppercase">{t('project_analytics')}</h3>
             <div className="mt-1 truncate text-[11px] font-semibold text-modrinth-muted">{analyticsRangeLabel}</div>
           </div>
-          <div className="app-segmented-tabs grid grid-cols-4 rounded-xl border border-modrinth-border bg-modrinth-bg p-1">
+          <div className="app-range-tabs app-analytics-icon-tabs grid grid-cols-4">
             {ANALYTICS_SERIES_METRICS.map((item) => {
               const label = item === 'downloads' ? t('downloads') : t(`${item}_label` as any);
               const Icon = item === 'downloads' ? Download : item === 'views' ? Eye : item === 'playtime' ? Timer : DollarSign;
@@ -2453,11 +2449,7 @@ const AnalyticsPage: React.FC<{ user: ModrinthUser; token: string }> = ({ user, 
                   key={item}
                   onClick={() => setProjectInsightMetric(item)}
                   data-active={projectInsightMetric === item ? 'true' : undefined}
-                  className={`app-segmented-tab flex h-7 w-7 items-center justify-center rounded-lg transition-all duration-200 active:scale-95 ${
-                    projectInsightMetric === item
-                      ? 'bg-modrinth-card text-modrinth-text shadow'
-                      : 'text-modrinth-muted hover:text-modrinth-text'
-                  }`}
+                  className="app-range-tab app-analytics-icon-tab"
                   aria-label={label}
                   title={label}
                 >
