@@ -684,16 +684,17 @@ button:disabled {
 
 .app-range-tabs {
   min-width: 7.25rem;
-  gap: 0.125rem;
+  gap: 0.25rem;
   border: 1px solid var(--border);
   border-radius: 0.75rem;
   background: var(--bg);
-  padding: 0.1875rem;
+  padding: 0.25rem;
 }
 
 .app-range-tab {
   min-width: 2.1rem;
-  border-radius: 0.55rem;
+  border: 1px solid transparent;
+  border-radius: 0.5rem;
   padding: 0.32rem 0.55rem;
   color: var(--muted);
   font-size: 0.625rem;
@@ -715,9 +716,12 @@ button:disabled {
 }
 
 .app-range-tab[data-active='true'] {
-  background: color-mix(in srgb, var(--accent-color) 16%, var(--card));
+  border-color: color-mix(in srgb, var(--accent-color) 62%, var(--border));
+  background: color-mix(in srgb, var(--accent-color) 10%, var(--card));
   color: var(--text);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-color) 22%, transparent);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--accent-color) 22%, transparent),
+    0 6px 14px color-mix(in srgb, var(--accent-color) 12%, transparent);
 }
 
 .theme-glass .app-range-tabs {
@@ -737,13 +741,14 @@ button:disabled {
 }
 
 .theme-glass .app-range-tab[data-active='true'] {
+  border-color: color-mix(in srgb, var(--accent-color) 58%, rgba(255, 255, 255, 0.12));
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.008)),
-    rgba(3, 3, 3, 0.74);
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.006)),
+    color-mix(in srgb, var(--accent-color) 9%, rgba(3, 3, 3, 0.76));
   color: var(--text);
   box-shadow:
-    inset 0 0 0 1px var(--glass-accent-ring),
-    0 6px 16px rgba(0, 0, 0, 0.22);
+    inset 0 0 0 1px color-mix(in srgb, var(--accent-color) 18%, transparent),
+    0 8px 18px rgba(0, 0, 0, 0.26);
 }
 
 .app-theme-tabs .app-theme-tab[data-active='true'] {
