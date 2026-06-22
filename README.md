@@ -2,133 +2,149 @@
 
 <div align="center">
   <img src="./public/logo.png" width="128" height="128" alt="Rinthy" />
+  <p><strong>A mobile Modrinth dashboard for creators.</strong></p>
+  <p>Manage projects, teams, versions, notifications, and analytics from your phone.</p>
 </div>
 
-# **EN**
-
-Rinthy is a mobile app for Modrinth developers.
-
-It helps you manage your projects and check analytics right from your phone.
-
-**Disclaimer:** Unofficial app for Modrinth. Not affiliated with or endorsed by Modrinth.
+> Rinthy is an unofficial app for Modrinth. It is not affiliated with, endorsed by, or maintained by Modrinth.
 
 ## Screenshots
 
 <div align="center">
-  <img src="./docs/screenshots/login.png" width="280" alt="Login" />
-  <img src="./docs/screenshots/developer-panel.png" width="280" alt="Developer Panel" />
-  <img src="./docs/screenshots/analytics.png" width="280" alt="Analytics" />
+  <img src="./docs/screenshots/developer-panel.png" width="220" alt="Developer panel" />
+  <img src="./docs/screenshots/teams.png" width="220" alt="Teams and organizations" />
+  <img src="./docs/screenshots/analytics.png" width="220" alt="Analytics" />
+  <img src="./docs/screenshots/glass-theme.png" width="220" alt="Glass theme" />
 </div>
 
-## Features
+## What Rinthy Can Do
 
-- **Projects dashboard** (your projects list)
-- **Project editing** (title/summary/description, links, status)
-- **Project team management** (members)
-- **Versions management** (view/edit versions)
-- **Analytics overview** (downloads/follows)
-- **Notifications** (unread notifications)
-- **Profile editing** (username, bio, avatar)
-- **Appearance settings** (theme, accent color)
-- **RU/EN language support**
-- **Balance view**
+- View and manage your Modrinth projects.
+- Create projects and edit project metadata, links, descriptions, status, icons, and gallery images.
+- Manage versions, loaders, game versions, dependencies, and version metadata.
+- Work with teams and organizations, including members, permissions, invites, ownership, and organization projects.
+- Open related projects directly from notifications.
+- View analytics for downloads, views, playtime, revenue, trends, and per-project performance.
+- Check balance and payout history where Modrinth exposes that data.
+- Edit your Modrinth profile, avatar, bio, and account details.
+- Customize the app with themes, accent colors, language settings, and the newer glass theme.
+- Use the app in English, Russian, and other community-contributed languages.
 
-## Getting started (Local development)
+## Downloads
+
+Android builds are published as APK files in GitHub Releases.
+
+iOS builds are distributed as an unsigned IPA for sideloading. To install the iOS app, use Sideloadly on a computer, sign in to iCloud on Apple's official iCloud app/site, connect your iPhone with a cable, install the IPA, then trust the developer profile in iPhone settings and enable Developer Mode if iOS asks.
+
+## Authentication
+
+Rinthy uses Modrinth OAuth for normal sign-in. PAT login is still available as a fallback for development or recovery.
+
+Tokens are stored locally on your device.
+
+## Local Development
 
 ### Requirements
 
 - Node.js
-- Android Studio (for Android builds)
+- Android Studio for Android builds
+- Xcode or a macOS build service for iOS builds
 
-### Install
+### Install Dependencies
 
 ```bash
 npm install
 ```
 
-### Run in browser (dev)
+### Run In Browser
 
 ```bash
 npm run dev
 ```
 
-## Android build (Capacitor)
+### Typecheck
 
-### Build web bundle
+```bash
+npm run typecheck
+```
+
+### Build Web App
 
 ```bash
 npm run build
 ```
 
-### Sync assets to Android
+## Android Build
 
 ```bash
+npm run build
 npx cap sync android
-```
-
-If you changed Android deep link settings for OAuth, run sync again before opening Android Studio.
-
-### Open Android Studio
-
-```bash
 npx cap open android
 ```
 
-### Run on device
+Then run the app from Android Studio.
 
-From Android Studio: **Run**
+## iOS Build
 
-## Authentication
+```bash
+npm run build
+npx cap sync ios
+npx cap open ios
+```
 
-Rinthy uses **Modrinth OAuth** as the primary sign-in method.
-
-- Deploy the companion auth backend to Vercel
-- Configure the Modrinth application redirect URI to your backend callback
-- Sign in with the `Continue with Modrinth` button in the app
-
-PAT login is still available as a fallback.
-
-**Security note:** the token is stored locally on your device.
+For sideloading, build or download the unsigned IPA and install it with Sideloadly.
 
 ---
 
 # Русский
 
-Rinthy — это мобильное приложение для разработчиков на Modrinth.
+Rinthy — неофициальное мобильное приложение для авторов на Modrinth.
 
-С помощью Rinthy можно управлять проектами и смотреть аналитику прямо с телефона.
-
-**Дисклеймер:** неофициальное приложение для Modrinth. Не связано с Modrinth и не поддерживается ими.
+С ним можно управлять проектами, версиями, командами, организациями, уведомлениями и аналитикой прямо с телефона.
 
 ## Скриншоты
 
 <div align="center">
-  <img src="./docs/screenshots/login.png" width="280" alt="Login" />
-  <img src="./docs/screenshots/developer-panel.png" width="280" alt="Developer Panel" />
-  <img src="./docs/screenshots/analytics.png" width="280" alt="Analytics" />
+  <img src="./docs/screenshots/developer-panel.png" width="220" alt="Панель разработчика" />
+  <img src="./docs/screenshots/teams.png" width="220" alt="Команды и организации" />
+  <img src="./docs/screenshots/analytics.png" width="220" alt="Аналитика" />
+  <img src="./docs/screenshots/glass-theme.png" width="220" alt="Glass тема" />
 </div>
 
 ## Возможности
 
-- **Список проектов**
-- **Редактирование проекта** (название/краткое описание/описание, ссылки, статус)
-- **Управление командой проекта** (участники)
-- **Управление версиями** (просмотр/редактирование)
-- **Аналитика** (загрузки/подписки)
-- **Уведомления**
-- **Редактирование профиля** (ник, био, аватар)
-- **Настройки внешнего вида** (тема, основной цвет)
-- **Поддержка RU/EN**
-- **Просмотр баланса**
+- Просмотр и управление проектами Modrinth.
+- Создание проектов и редактирование метаданных, ссылок, описаний, статуса, иконок и галереи.
+- Управление версиями, загрузчиками, версиями игры, зависимостями и метаданными релизов.
+- Работа с командами и организациями: участники, права, приглашения, владелец и проекты организации.
+- Переход в связанные проекты прямо из уведомлений.
+- Аналитика по загрузкам, просмотрам, playtime, доходу, трендам и отдельным проектам.
+- Просмотр баланса и истории выплат, если эти данные доступны через Modrinth.
+- Редактирование профиля, аватара, био и данных аккаунта.
+- Темы, акцентные цвета, выбор языка и обновлённая glass-тема.
+- Поддержка русского, английского и других языков, которые помогает добавлять сообщество.
 
-## Запуск локально
+## Установка
+
+Android-версия публикуется APK-файлом в GitHub Releases.
+
+iOS-версия доступна как unsigned IPA для sideloading. Чтобы установить её на iPhone, нужен Sideloadly на ПК, вход в iCloud через официальный iCloud от Apple, iPhone по проводу, установка IPA через Sideloadly, доверие профилю разработчика в настройках iPhone и Developer Mode, если iOS попросит его включить.
+
+## Авторизация
+
+Основной вход работает через Modrinth OAuth. PAT-вход оставлен как запасной вариант для разработки или восстановления доступа.
+
+Токены хранятся локально на устройстве.
+
+## Локальный запуск
 
 ### Требования
 
 - Node.js
-- Android Studio (для сборки Android)
+- Android Studio для Android-сборок
+- Xcode или macOS build service для iOS-сборок
 
-### Установка
+### Установка зависимостей
 
 ```bash
 npm install
@@ -140,36 +156,34 @@ npm install
 npm run dev
 ```
 
-## Сборка Android (Capacitor)
+### Проверка TypeScript
 
-### Сборка web
+```bash
+npm run typecheck
+```
+
+### Сборка web-приложения
 
 ```bash
 npm run build
 ```
 
-### Синхронизация в Android
+## Android-сборка
 
 ```bash
+npm run build
 npx cap sync android
-```
-
-Если менял Android deep link для OAuth, снова выполни sync перед открытием Android Studio.
-
-### Открыть Android Studio
-
-```bash
 npx cap open android
 ```
 
-## Авторизация
+После этого приложение можно запускать из Android Studio.
 
-Основной вход в Rinthy теперь работает через **Modrinth OAuth**.
+## iOS-сборка
 
-Вход по PAT оставлен как запасной вариант.
+```bash
+npm run build
+npx cap sync ios
+npx cap open ios
+```
 
-- Открой: https://modrinth.com/settings/pats
-- Создай новый токен
-- Выдай нужные права, если хочешь использовать PAT fallback
-
-**Важно:** токен хранится локально на устройстве.
+Для sideloading можно собрать или скачать unsigned IPA и установить его через Sideloadly.
