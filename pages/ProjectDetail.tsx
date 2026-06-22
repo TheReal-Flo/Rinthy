@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, Check, Loader2, Package, Save, Search, X } from 'lucide-react';
-import { addGalleryImage, addTeamMember, changeProjectIcon, createVersion, deleteGalleryImage, deleteProjectIcon, deleteTeamMember, deleteVersionById, fetchGameVersionTags, fetchLoaderTags, fetchProject, fetchProjectDependencies, fetchProjectMembers, fetchProjectVersions, joinTeam, modifyVersion, searchUser, transferTeamOwnership, updateProject, updateTeamMember } from '../services/modrinthService';
+import { addGalleryImage, addTeamMember, changeProjectIcon, createVersion, deleteGalleryImage, deleteProjectIcon, deleteTeamMember, deleteVersionById, fetchGameVersionTags, fetchLoaderTags, fetchProject, fetchProjectDependencies, fetchProjectMembers, fetchProjectVersions, fetchUserProjects, joinTeam, modifyVersion, searchUser, transferTeamOwnership, updateProject, updateTeamMember } from '../services/modrinthService';
 import type { ModrinthProject, ModrinthVersion, ProjectDependency, ProjectMember, UserSearchResult } from '../types';
 import { useSettings } from '../contexts/SettingsContext';
 import { EditTab, MembersTab, OverviewTab, VersionsTab, projectTabs } from './project-detail/ProjectDetailTabs';
@@ -130,6 +130,7 @@ const ProjectDetail: React.FC<{ token: string; currentUserId?: string | null }> 
   const navigate = useNavigate();
   const [project, setProject] = useState<ModrinthProject | null>(null);
   const [members, setMembers] = useState<ProjectMember[]>([]);
+  const [hasListedProjectAccess, setHasListedProjectAccess] = useState(false);
   const [versions, setVersions] = useState<ModrinthVersion[]>([]);
   const [deps, setDeps] = useState<ProjectDependency[]>([]);
   const [loading, setLoading] = useState(true);
@@ -239,10 +240,10 @@ const ProjectDetail: React.FC<{ token: string; currentUserId?: string | null }> 
     () => members.find((member) => member.accepted && member.user.id === currentUserId) || null,
     [currentUserId, members]
   );
-  const hasProjectAccess = !!currentProjectMember;
-  const canCreateVersions = hasProjectPermission(currentProjectMember, 0);
+  const hasProjectAccess = !!currentProjectMember || hasListedProjectAccess;
+  const canCreateVersions = currentProjectMember ? hasProjectPermission(currentProjectMember, 0) : hasListedProjectAccess;
   const canEditVersions = canCreateVersions;
-  const canDeleteVersions = hasProjectPermission(currentProjectMember, 1);
+  const canDeleteVersions = currentProjectMember ? hasProjectPermission(currentProjectMember, 1) : hasListedProjectAccess;
   const visibleTabs = useMemo<ProjectTab[]>(
     () => (hasProjectAccess ? projectTabs : READ_ONLY_PROJECT_TABS),
     [hasProjectAccess]
@@ -347,16 +348,18 @@ const ProjectDetail: React.FC<{ token: string; currentUserId?: string | null }> 
     try {
       setLoading(true);
       const pData = await fetchProject(id, token);
-      const [mData, dData, vData, gvTags, ldTags] = await Promise.all([
+      const [mData, dData, vData, gvTags, ldTags, accessibleProjects] = await Promise.all([
         fetchProjectMembers(id, token).catch(() => [] as ProjectMember[]),
         fetchProjectDependencies(id, token).catch(() => [] as ProjectDependency[]),
         fetchProjectVersions(id, token).catch(() => [] as ModrinthVersion[]),
         fetchGameVersionTags().catch(() => [] as string[]),
-        fetchLoaderTags().catch(() => [] as string[])
+        fetchLoaderTags().catch(() => [] as string[]),
+        currentUserId ? fetchUserProjects(currentUserId, token).catch(() => [] as ModrinthProject[]) : Promise.resolve([] as ModrinthProject[])
       ]);
       if (requestId !== loadRequestIdRef.current) return;
       setProject(pData);
       setMembers(mData);
+      setHasListedProjectAccess(accessibleProjects.some((item) => item.id === pData.id || item.slug === pData.slug));
       setDeps(dData);
       setVersions(vData);
       setGameVersionTags(gvTags);
@@ -381,7 +384,7 @@ const ProjectDetail: React.FC<{ token: string; currentUserId?: string | null }> 
     } finally {
       if (requestId === loadRequestIdRef.current) setLoading(false);
     }
-  }, [id, token]);
+  }, [currentUserId, id, token]);
 
   const handleAddDependency = useCallback(async (rawIdOrSlug: string, target: 'edit' | 'create' = 'edit') => {
     const value = rawIdOrSlug.trim();
