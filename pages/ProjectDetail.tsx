@@ -11,6 +11,13 @@ import { showToast } from '../utils/toast';
 
 const MarkdownRenderer = React.lazy(() => import('../components/MarkdownRenderer'));
 const DISMISS_ANIMATION_MS = 180;
+const READ_ONLY_PROJECT_TABS: ProjectTab[] = ['overview', 'versions'];
+
+const isOwnerMember = (member?: ProjectMember | null) =>
+  !!member && (member.is_owner || member.role?.toLowerCase() === 'owner');
+
+const hasProjectPermission = (member: ProjectMember | null | undefined, bit: number) =>
+  isOwnerMember(member) || !!((member?.permissions || 0) & (1 << bit));
 
 const useAnimatedDismiss = (isOpen: boolean, onClose: () => void) => {
   const [visible, setVisible] = useState(isOpen);
@@ -228,7 +235,19 @@ const ProjectDetail: React.FC<{ token: string; currentUserId?: string | null }> 
     return Array.from(new Set(versions.flatMap(v => v.loaders))).sort();
   }, [loaderTags, versions]);
 
-  const tabsOrder = projectTabs;
+  const currentProjectMember = useMemo(
+    () => members.find((member) => member.accepted && member.user.id === currentUserId) || null,
+    [currentUserId, members]
+  );
+  const hasProjectAccess = !!currentProjectMember;
+  const canCreateVersions = hasProjectPermission(currentProjectMember, 0);
+  const canEditVersions = canCreateVersions;
+  const canDeleteVersions = hasProjectPermission(currentProjectMember, 1);
+  const visibleTabs = useMemo<ProjectTab[]>(
+    () => (hasProjectAccess ? projectTabs : READ_ONLY_PROJECT_TABS),
+    [hasProjectAccess]
+  );
+  const tabsOrder = visibleTabs;
   const touchStartX = useRef<number | null>(null);
   const touchStartY = useRef<number | null>(null);
   const depInputRef = useRef<HTMLInputElement | null>(null);
@@ -327,13 +346,13 @@ const ProjectDetail: React.FC<{ token: string; currentUserId?: string | null }> 
     const requestId = ++loadRequestIdRef.current;
     try {
       setLoading(true);
-      const [pData, mData, dData, vData, gvTags, ldTags] = await Promise.all([
-        fetchProject(id, token),
-        fetchProjectMembers(id, token),
-        fetchProjectDependencies(id, token),
-        fetchProjectVersions(id, token),
-        fetchGameVersionTags(),
-        fetchLoaderTags()
+      const pData = await fetchProject(id, token);
+      const [mData, dData, vData, gvTags, ldTags] = await Promise.all([
+        fetchProjectMembers(id, token).catch(() => [] as ProjectMember[]),
+        fetchProjectDependencies(id, token).catch(() => [] as ProjectDependency[]),
+        fetchProjectVersions(id, token).catch(() => [] as ModrinthVersion[]),
+        fetchGameVersionTags().catch(() => [] as string[]),
+        fetchLoaderTags().catch(() => [] as string[])
       ]);
       if (requestId !== loadRequestIdRef.current) return;
       setProject(pData);
@@ -470,6 +489,10 @@ const ProjectDetail: React.FC<{ token: string; currentUserId?: string | null }> 
   };
 
   useEffect(() => { loadData(); }, [loadData]);
+
+  useEffect(() => {
+    if (!visibleTabs.includes(activeTab)) setActiveTab('overview');
+  }, [activeTab, visibleTabs]);
 
   useEffect(() => () => {
     loadRequestIdRef.current += 1;
@@ -784,8 +807,11 @@ const ProjectDetail: React.FC<{ token: string; currentUserId?: string | null }> 
           ) : <div className="h-9 w-10 shrink-0" />}
         </div>
         <div className="px-4 pb-3">
-          <div className="app-segmented-tabs grid grid-cols-4 gap-1 rounded-lg border border-modrinth-border bg-modrinth-bg p-1">
-          {projectTabs.map((tab) => (
+          <div
+            className="app-segmented-tabs grid gap-1 rounded-lg border border-modrinth-border bg-modrinth-bg p-1"
+            style={{ gridTemplateColumns: `repeat(${visibleTabs.length}, minmax(0, 1fr))` }}
+          >
+          {visibleTabs.map((tab) => (
             <button
               key={tab}
               onClick={() => {
@@ -814,6 +840,9 @@ const ProjectDetail: React.FC<{ token: string; currentUserId?: string | null }> 
               versionMenuId={versionMenuId}
               versionMenuRef={versionMenuRef}
               t={t}
+              canCreateVersions={canCreateVersions}
+              canEditVersions={canEditVersions}
+              canDeleteVersions={canDeleteVersions}
               setVersionMenuId={setVersionMenuId}
               setSelectedVersion={setSelectedVersion}
               openCreateVersion={openCreateVersion}

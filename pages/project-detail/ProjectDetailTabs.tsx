@@ -201,21 +201,26 @@ export const VersionsTab: React.FC<{
   versionMenuId: string | null;
   versionMenuRef: React.RefObject<HTMLDivElement | null>;
   t: Translator;
+  canCreateVersions: boolean;
+  canEditVersions: boolean;
+  canDeleteVersions: boolean;
   setVersionMenuId: React.Dispatch<React.SetStateAction<string | null>>;
   setSelectedVersion: (version: ModrinthVersion) => void;
   openCreateVersion: () => void;
   openEditVersion: (version: ModrinthVersion) => void;
   handleDeleteVersion: (version: ModrinthVersion) => void;
-}> = ({ versions, versionMenuId, versionMenuRef, t, setVersionMenuId, setSelectedVersion, openCreateVersion, openEditVersion, handleDeleteVersion }) => (
+}> = ({ versions, versionMenuId, versionMenuRef, t, canCreateVersions, canEditVersions, canDeleteVersions, setVersionMenuId, setSelectedVersion, openCreateVersion, openEditVersion, handleDeleteVersion }) => (
   <div className="space-y-3 pb-24 animate-fade-in">
-    <button
-      type="button"
-      onClick={openCreateVersion}
-      className="app-primary flex w-full items-center justify-center gap-2 px-4 py-3 text-sm"
-    >
-      <Plus size={17} />
-      {t('create_version')}
-    </button>
+    {canCreateVersions && (
+      <button
+        type="button"
+        onClick={openCreateVersion}
+        className="app-primary flex w-full items-center justify-center gap-2 px-4 py-3 text-sm"
+      >
+        <Plus size={17} />
+        {t('create_version')}
+      </button>
+    )}
     {versions.length === 0 ? (
       <div className="py-10 text-center text-modrinth-muted">
         <Layers size={44} className="mx-auto mb-4 opacity-45" />
@@ -259,25 +264,31 @@ export const VersionsTab: React.FC<{
                 ))}
               </div>
             </div>
-            <div className="absolute right-3 top-3" ref={versionMenuId === version.id ? versionMenuRef : null}>
-              <button
-                type="button"
-                onClick={(event) => { event.stopPropagation(); setVersionMenuId(prev => prev === version.id ? null : version.id); }}
-                className="rounded-lg p-2 text-modrinth-muted transition-all hover:text-modrinth-green active:scale-90"
-              >
-                <MoreVertical size={20} strokeWidth={3} />
-              </button>
+            {(canEditVersions || canDeleteVersions) && (
+              <div className="absolute right-3 top-3" ref={versionMenuId === version.id ? versionMenuRef : null}>
+                <button
+                  type="button"
+                  onClick={(event) => { event.stopPropagation(); setVersionMenuId(prev => prev === version.id ? null : version.id); }}
+                  className="rounded-lg p-2 text-modrinth-muted transition-all hover:text-modrinth-green active:scale-90"
+                >
+                  <MoreVertical size={20} strokeWidth={3} />
+                </button>
                 {versionMenuId === version.id && (
                   <div className={`app-floating-menu app-glass-menu absolute right-0 z-[120] min-w-[148px] overflow-hidden rounded-lg border border-modrinth-border bg-modrinth-card text-xs shadow-[0_18px_42px_rgba(0,0,0,0.48)] ${index < 2 ? 'top-11' : 'bottom-11'}`}>
-                  <button className="app-glass-menu-item w-full px-3 py-2.5 text-left font-semibold text-modrinth-text" onClick={() => { setVersionMenuId(null); openEditVersion(version); }}>
-                    Edit
-                  </button>
-                  <button className="app-glass-menu-item w-full border-t border-modrinth-border/50 px-3 py-2.5 text-left font-semibold text-red-400" onClick={() => { setVersionMenuId(null); handleDeleteVersion(version); }}>
-                    Delete
-                  </button>
-                </div>
-              )}
-            </div>
+                    {canEditVersions && (
+                      <button className="app-glass-menu-item w-full px-3 py-2.5 text-left font-semibold text-modrinth-text" onClick={() => { setVersionMenuId(null); openEditVersion(version); }}>
+                        Edit
+                      </button>
+                    )}
+                    {canDeleteVersions && (
+                      <button className="app-glass-menu-item w-full border-t border-modrinth-border/50 px-3 py-2.5 text-left font-semibold text-red-400" onClick={() => { setVersionMenuId(null); handleDeleteVersion(version); }}>
+                        Delete
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       ))
