@@ -2281,17 +2281,13 @@ const AnalyticsPage: React.FC<{ user: ModrinthUser; token: string }> = ({ user, 
             <h3 className="text-sm font-bold text-modrinth-muted uppercase">{t('range_summary')}</h3>
             <div className="mt-1 truncate text-[11px] font-semibold text-modrinth-muted">{analyticsRangeLabel}</div>
           </div>
-          <div className="app-segmented-tabs grid grid-cols-3 rounded-xl border border-modrinth-border bg-modrinth-bg p-1">
+          <div className="app-range-tabs grid grid-cols-3">
             {[7, 30, 90].map((days) => (
               <button
                 key={days}
                 onClick={() => setAnalyticsRangeDays(days as 7 | 30 | 90)}
                 data-active={analyticsRangeDays === days ? 'true' : undefined}
-                className={`app-segmented-tab min-w-10 rounded-lg px-2.5 py-1 text-[10px] font-extrabold transition-all duration-200 active:scale-95 ${
-                  analyticsRangeDays === days
-                    ? 'text-modrinth-text'
-                    : 'text-modrinth-muted hover:text-modrinth-text'
-                }`}
+                className="app-range-tab"
               >
                 {days}d
               </button>
